@@ -1,29 +1,33 @@
 # Selecto Livebooks
 
-`selecto_livebooks` is a standalone example repo for learning and testing
-the Selecto query builder in a real Elixir project and Livebook.
+`selecto_livebooks` is the Livebook companion repo for Selecto and SelectoUpdato.
+It ships a runnable example app plus focused workbooks for major feature areas.
 
-It includes:
+## Structure
 
-- `selecto_examples/` - an Ecto app with schemas, migrations, and seed data
-- `selecto_examples/livebooks/selecto_guide_examples.livemd` - an interactive
-  end-to-end guide covering core and advanced Selecto features
-- `selecto_examples/livebooks/selecto_updato_feature_tour.livemd` - a
-  full write-path tour covering the complete SelectoUpdato public API
-- `selecto_examples/livebooks/selecto_selection_shapes_subselects_pivots.livemd` -
-  focused examples for selection patterns, selection shapes, subselects, and
-  pivoted query roots
+- `selecto_examples/` - Ecto app with schemas, domains, migrations, and seeds
+- `selecto_examples/livebooks/` - interactive notebooks grouped by topic
 
-## What This Repo Does
+## Workbook Index
 
-The examples are centered on an e-commerce-style dataset and demonstrate:
+Core tours:
+- `selecto_guide_examples.livemd`
+- `selecto_selection_shapes_subselects_pivots.livemd`
+- `selecto_updato_feature_tour.livemd`
 
-1. Domain configuration (`source`, `schemas`, `joins`)
-2. Query building with `select`, `filter`, `order_by`, `group_by`
-3. Joins (including dynamic joins and parameterized join aliases)
-4. Pivoting, subselects, CTEs, recursive CTEs, set operations
-5. Window functions, JSON/array operations, CASE expressions, VALUES
-6. Different execution/output formats
+Focused Selecto workbooks:
+- `selecto_filtering_system_workbook.livemd`
+- `selecto_group_by_aggregates_workbook.livemd`
+- `selecto_ctes_workbook.livemd`
+- `selecto_other_joins_workbook.livemd`
+- `selecto_domain_join_types_workbook.livemd`
+- `selecto_set_operations_workbook.livemd`
+- `selecto_window_functions_workbook.livemd`
+- `selecto_json_operations_workbook.livemd`
+- `selecto_array_unnest_lateral_workbook.livemd`
+- `selecto_case_expressions_workbook.livemd`
+- `selecto_values_lookup_workbook.livemd`
+- `selecto_output_formats_execution_workbook.livemd`
 
 ## Requirements
 
@@ -33,37 +37,32 @@ The examples are centered on an e-commerce-style dataset and demonstrate:
 
 ## Quick Start
 
-1. Go to the example app:
+1. Prepare the example app:
    ```bash
    cd selecto_examples
-   ```
-2. Install deps and prepare the database:
-   ```bash
    mix setup
    ```
-3. Start Livebook:
+2. Start Livebook from repo root or inside `selecto_examples`:
    ```bash
    livebook server
    ```
-4. Open one notebook:
-   - `selecto_examples/livebooks/selecto_guide_examples.livemd`
-   - `selecto_examples/livebooks/selecto_selection_shapes_subselects_pivots.livemd`
+3. Open any notebook under `selecto_examples/livebooks/`.
 
-## Dependency Source
+## Dependency Policy
 
-`selecto_examples` and the Livebook install `selecto` directly from GitHub
-(`seeken/selecto`, branch `main`) so examples track ongoing development.
+- Selecto-focused notebooks install Selecto from Hex:
+  - `{:selecto, "~> 0.3.5"}`
+- The Updato workbook pins Selecto to `~> 0.3.5` and resolves `selecto_updato`
+  from local path when available, otherwise GitHub (`seeken/selecto_updato`,
+  `main`) until a Hex release is available.
+- The `selecto_examples` Mix project still supports local ecosystem development
+  by preferring `../../selecto` when present.
 
-## Database Model
+## Dataset
 
-The seed data creates:
+Seeds create an e-commerce style model with:
 
-- categories
-- suppliers
-- products
-- tags
-- customers
-- orders
-- order_items
+- categories, suppliers, products, tags
+- customers, orders, order_items
 - employees (hierarchy)
 - reviews

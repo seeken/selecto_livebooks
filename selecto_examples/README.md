@@ -88,6 +88,8 @@ or any focused workbook under `selecto_examples/livebooks/`:
 
 ## Notes
 
-- Most livebooks install `selecto` from Hex (`>= 0.3.4 and < 0.4.0`).
+- Most livebooks install `selecto` from Hex (`~> 0.3.5`).
 - The `selecto_updato` tour keeps its package source dynamic until `selecto_updato`
   is published on Hex.
+- The local `selecto_examples` app keeps local-ecosystem behavior by preferring
+  a vendored `../../selecto` dependency when present.
