@@ -589,6 +589,45 @@ soft_delete_domain = %{
 %{run_id: run_id}
 ```
 
+## Tenant Scope Guardrails
+
+This quick section demonstrates tenant helper APIs without mutating records.
+
+```elixir
+tenant_demo_domain =
+  order_domain
+  |> Map.put(:tenant_required, true)
+  |> Map.update!(:columns, &Map.put(&1, "tenant_id", %{type: :string}))
+  |> Map.update!(:writable, fn writable -> Enum.uniq(["tenant_id" | writable]) end)
+
+tenant_id = "tenant-#{run_id}"
+
+missing_scope_result =
+  tenant_demo_domain
+  |> SelectoUpdato.new()
+  |> SelectoUpdato.update(%{"status" => "pending"})
+  |> SelectoUpdato.filter({"id", -1})
+  |> SelectoUpdato.validate_tenant_scope()
+
+scoped_result =
+  tenant_demo_domain
+  |> SelectoUpdato.new()
+  |> SelectoUpdato.with_tenant(%{tenant_id: tenant_id, required: true, prefix: "tenant_demo"})
+  |> SelectoUpdato.apply_tenant_scope()
+  |> SelectoUpdato.update(%{"status" => "pending"})
+  |> SelectoUpdato.filter({"id", -1})
+  |> SelectoUpdato.validate_tenant_scope()
+
+%{
+  missing_scope_result: missing_scope_result,
+  scoped_result: scoped_result
+}
+```
+
+`Selecto.execute_stream/2` remains read-side behavior. If you derive Updato
+write inputs from streamed reads, ensure read adapters declare
+`supports?(:stream)` and implement `stream/4`.
+
 ### Visual Map: Mutation Section Dependencies
 
 ```mermaid

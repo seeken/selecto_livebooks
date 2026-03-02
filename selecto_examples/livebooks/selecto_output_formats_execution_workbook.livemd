@@ -328,6 +328,51 @@ case Selecto.execute(advanced_format_query, format: {:stream, :maps}) do
 end
 ```
 
+## 6) `execute_stream/2` Contract Boundaries
+
+`{:stream, ...}` format and `execute_stream/2` are related but not identical.
+
+- `format: {:stream, :maps}` transforms a normal execute response into a lazy stream.
+- `Selecto.execute_stream/2` asks the adapter/connection path to stream rows directly.
+
+For adapter-backed paths, streaming requires an explicit contract:
+
+- adapter must return `true` for `supports?(:stream)`
+- adapter must implement `stream/4`
+
+```elixir
+stream_query =
+  Selecto.configure(config.product_domain, config.repo)
+  |> Selecto.select(["id", "name"])
+  |> Selecto.order_by({"id", :asc})
+  |> Selecto.limit(5)
+
+OutputLab.Helpers.explain("execute_stream/2 query", stream_query)
+
+case Selecto.execute_stream(stream_query, analyze_complexity: false) do
+  {:ok, row_stream} ->
+    row_stream
+    |> Enum.take(5)
+    |> IO.inspect(label: "execute_stream preview")
+
+  {:error, error} ->
+    IO.puts("execute_stream error: #{inspect(error)}")
+end
+
+adapter_stream_probe =
+  stream_query
+  |> Map.put(:adapter, Selecto.DB.MySQL)
+  |> Map.put(:connection, :not_a_real_connection)
+
+case Selecto.execute_stream(adapter_stream_probe, analyze_complexity: false) do
+  {:error, %Selecto.Error{details: details}} ->
+    IO.inspect(details, label: "adapter stream contract details")
+
+  other ->
+    IO.inspect(other, label: "unexpected stream probe result")
+end
+```
+
 ## Next Steps
 
 To extend this workbook, add:
