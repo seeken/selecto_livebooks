@@ -1,7 +1,7 @@
 # Selecto Guide - Interactive Examples
 
 ```elixir
-selecto_dep = {:selecto, github: "seeken/selecto", ref: "f1f937e5b08f4b90c9ac5bcfa33106551c23b60a"}
+selecto_dep = {:selecto, github: "seeken/selecto", ref: "777483e861c263161760be06b781194839b9aa28"}
 
 Mix.install([
   selecto_dep,
@@ -1479,17 +1479,9 @@ cte_query =
     ])
     |> Selecto.filter({"manager_id", :not_null})
     |> Selecto.group_by(["manager_id"])
-  end, columns: ["manager_id", "direct_report_count", "team_salary_total"])
-  |> Selecto.join(:manager_team_metrics,
-    source: "manager_team_metrics",
-    type: :inner,
-    owner_key: :id,
-    related_key: :manager_id,
-    fields: %{
-      manager_id: %{type: :integer},
-      direct_report_count: %{type: :integer},
-      team_salary_total: %{type: :decimal}
-    }
+  end,
+  columns: ["manager_id", "direct_report_count", "team_salary_total"],
+  join: [type: :inner, owner_key: :id, related_key: :manager_id, fields: :infer]
   )
   |> Selecto.select([
     "first_name",
@@ -1600,20 +1592,8 @@ recursive_cte_query =
   |> Selecto.with_recursive_cte("employee_tree_sales",
     base_query: base_query,
     recursive_query: recursive_query,
-    columns: ["id", "first_name", "last_name", "manager_id", "depth"]
-  )
-  |> Selecto.join(:employee_tree_sales,
-    source: "employee_tree_sales",
-    type: :inner,
-    owner_key: :id,
-    related_key: :id,
-    fields: %{
-      id: %{type: :integer},
-      first_name: %{type: :string},
-      last_name: %{type: :string},
-      manager_id: %{type: :integer},
-      depth: %{type: :integer}
-    }
+    columns: ["id", "first_name", "last_name", "manager_id", "depth"],
+    join: [type: :inner, owner_key: :id, related_key: :id, fields: :infer]
   )
   |> Selecto.select([
     "employee_tree_sales.depth",
@@ -2017,9 +1997,9 @@ Expected output checks (VALUES Clause):
 * Params should be `[]` for this literal lookup example
 * Output includes status plus the mapped `status_label`
 
-## Section 19: Multiple CTEs with `with_ctes/2`
+## Section 19: Multiple CTEs with `with_ctes/3`
 
-This section focuses on Multiple CTEs with `with_ctes/2`. Run the examples in order and compare the generated SQL checks with the returned rows to connect API calls to query behavior.
+This section focuses on Multiple CTEs with `with_ctes/3`. Run the examples in order and compare the generated SQL checks with the returned rows to connect API calls to query behavior.
 
 ### Combine High-Value Orders with Customer Order Frequency
 
@@ -2044,26 +2024,17 @@ customer_order_counts_cte =
 
 multi_cte_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.with_ctes([high_value_orders_cte, customer_order_counts_cte])
-  |> Selecto.join(:high_value_orders,
-    source: "high_value_orders",
-    type: :inner,
-    owner_key: :id,
-    related_key: :id,
-    fields: %{
-      total: %{type: :decimal},
-      customer_id: %{type: :integer}
-    }
-  )
-  |> Selecto.join(:customer_order_counts,
-    source: "customer_order_counts",
-    type: :inner,
-    owner_key: :customer_id,
-    related_key: :customer_id,
-    fields: %{
-      customer_id: %{type: :integer},
-      count: %{type: :integer}
-    }
+  |> Selecto.with_ctes([high_value_orders_cte, customer_order_counts_cte],
+    joins: [
+      [name: "high_value_orders", type: :inner, owner_key: :id, related_key: :id, fields: :infer],
+      [
+        name: "customer_order_counts",
+        type: :inner,
+        owner_key: :customer_id,
+        related_key: :customer_id,
+        fields: :infer
+      ]
+    ]
   )
   |> Selecto.select([
     "order_number",
@@ -2096,7 +2067,7 @@ end
 Expected output checks (Multiple CTEs):
 
 * SQL starts with `WITH ...` and contains both `high_value_orders AS (...)` and `customer_order_counts AS (...)`
-* Main query consumes both CTEs through explicit joins
+* Main query consumes both CTEs through `with_ctes(..., joins: [...])`
 * Output includes order amount and per-customer order frequency
 
 ## Section 20: Array Manipulation (`array_manipulate/3`)
@@ -3510,7 +3481,7 @@ This Livebook has demonstrated the core features of Selecto:
 16. **UNNEST + LATERAL** - Expanding array values into row-level results
 17. **CASE Expressions** - Conditional classification directly in SQL
 18. **VALUES Clauses** - Inline lookup tables via `WITH ... AS (VALUES ...)`
-19. **Multi-CTE Composition** - Attach and consume multiple CTEs with `with_ctes/2`
+19. **Multi-CTE Composition** - Attach and consume multiple CTEs with `with_ctes/3`
 20. **Array Manipulation** - Transform arrays with append/remove/string conversion in one query
 21. **Execution Helpers** - Inspect SQL/timing metadata and enforce single-row semantics
 22. **Dynamic Subquery Joins** - Join a query to an ad-hoc subquery built with Selecto

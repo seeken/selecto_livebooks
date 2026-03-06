@@ -5,7 +5,7 @@
 Run this cell first. It installs Selecto and related packages from GitHub for this Livebook session.
 
 ```elixir
-selecto_dep = {:selecto, github: "seeken/selecto", ref: "f1f937e5b08f4b90c9ac5bcfa33106551c23b60a"}
+selecto_dep = {:selecto, github: "seeken/selecto", ref: "777483e861c263161760be06b781194839b9aa28"}
 
 Mix.install([
   selecto_dep,
@@ -399,13 +399,9 @@ staged_has_manager_query =
     Selecto.configure(config.employee_domain, config.repo)
     |> Selecto.select(["id"])
     |> Selecto.filter({"manager_id", :not_null})
-  end, columns: ["id"])
-  |> Selecto.join(:has_manager_ids,
-    source: "has_manager_ids",
-    type: :inner,
-    owner_key: :id,
-    related_key: :id,
-    fields: %{id: %{type: :integer}}
+  end,
+  columns: ["id"],
+  join: [type: :inner, owner_key: :id, related_key: :id, fields: :infer]
   )
   |> Selecto.select(["id", "first_name", "last_name", "title"])
 
@@ -416,13 +412,9 @@ staged_is_manager_query =
     |> Selecto.select(["manager_id"])
     |> Selecto.filter({"manager_id", :not_null})
     |> Selecto.group_by(["manager_id"])
-  end, columns: ["id"])
-  |> Selecto.join(:manager_ids,
-    source: "manager_ids",
-    type: :inner,
-    owner_key: :id,
-    related_key: :id,
-    fields: %{id: %{type: :integer}}
+  end,
+  columns: ["id"],
+  join: [type: :inner, owner_key: :id, related_key: :id, fields: :infer]
   )
   |> Selecto.select(["id", "first_name", "last_name", "title"])
 

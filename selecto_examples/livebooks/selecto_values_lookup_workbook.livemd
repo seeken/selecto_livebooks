@@ -5,7 +5,7 @@
 Run this cell first. It installs Selecto and related packages from GitHub for this Livebook session.
 
 ```elixir
-selecto_dep = {:selecto, github: "seeken/selecto", ref: "f1f937e5b08f4b90c9ac5bcfa33106551c23b60a"}
+selecto_dep = {:selecto, github: "seeken/selecto", ref: "777483e861c263161760be06b781194839b9aa28"}
 
 Mix.install([
   selecto_dep,
@@ -355,7 +355,10 @@ staged_lookup_query =
     Selecto.configure(config.order_domain, config.repo)
     |> Selecto.select(["id", "status", "total"])
     |> Selecto.filter({"total", {:>=, 150}})
-  end, columns: ["id", "status", "total"])
+  end,
+  columns: ["id", "status", "total"],
+  join: [type: :inner, owner_key: :id, related_key: :id, fields: :infer]
+  )
   |> Selecto.with_values(
     [
       ["processing", "In-flight"],
@@ -373,17 +376,6 @@ staged_lookup_query =
         status_group: %{type: :string}
       }
     ]
-  )
-  |> Selecto.join(:high_value_orders,
-    source: "high_value_orders",
-    type: :inner,
-    owner_key: :id,
-    related_key: :id,
-    fields: %{
-      id: %{type: :integer},
-      status: %{type: :string},
-      total: %{type: :decimal}
-    }
   )
   |> Selecto.select([
     "order_number",
