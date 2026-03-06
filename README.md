@@ -50,13 +50,12 @@ Focused Selecto workbooks:
 
 ## Dependency Policy
 
-- Selecto-focused notebooks install Selecto from Hex:
-  - `{:selecto, "~> 0.3.5"}`
-- The Updato workbook pins Selecto to `~> 0.3.5` and resolves `selecto_updato`
-  from local path when available, otherwise GitHub (`seeken/selecto_updato`,
-  `main`) until a Hex release is available.
-- The `selecto_examples` Mix project still supports local ecosystem development
-  by preferring `../../selecto` when present.
+- Selecto-focused notebooks install Selecto directly from GitHub:
+  - `{:selecto, github: "seeken/selecto", branch: "main"}`
+- The Updato workbook installs both Selecto libraries from GitHub:
+  - `{:selecto, github: "seeken/selecto", branch: "main", override: true}`
+  - `{:selecto_updato, github: "seeken/selecto_updato", branch: "main"}`
+- The `selecto_examples` Mix project also tracks Selecto from GitHub `main`.
 
 ## Dataset
 

@@ -1,35 +1,8 @@
 # SelectoUpdato Complete Feature Tour
 
 ```elixir
-find_local_package = fn package_name ->
-  cwd = File.cwd!()
-  ancestors = [cwd | Path.split(cwd) |> Enum.scan("/", &Path.join(&2, &1)) |> Enum.reverse()]
-
-  candidate_paths =
-    ancestors
-    |> Enum.flat_map(fn base ->
-      [
-        Path.join(base, "vendor/#{package_name}"),
-        Path.join(base, package_name)
-      ]
-    end)
-    |> Enum.uniq()
-
-  Enum.find(candidate_paths, &(File.exists?(Path.join(&1, "mix.exs"))))
-end
-
-local_updato_path = find_local_package.("selecto_updato")
-
-# Selecto is now published on Hex and this tour targets the 0.3.5 API.
-# Keep override true so this wins even if selecto_updato carries a different dep source.
-selecto_dep = {:selecto, "~> 0.3.5", override: true}
-
-updato_dep =
-  if local_updato_path do
-    {:selecto_updato, path: local_updato_path}
-  else
-    {:selecto_updato, github: "seeken/selecto_updato", branch: "main"}
-  end
+selecto_dep = {:selecto, github: "seeken/selecto", branch: "main", override: true}
+updato_dep = {:selecto_updato, github: "seeken/selecto_updato", branch: "main"}
 
 Mix.install([
   selecto_dep,

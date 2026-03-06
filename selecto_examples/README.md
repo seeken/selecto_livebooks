@@ -88,8 +88,7 @@ or any focused workbook under `selecto_examples/livebooks/`:
 
 ## Notes
 
-- Most livebooks install `selecto` from Hex (`~> 0.3.5`).
-- The `selecto_updato` tour keeps its package source dynamic until `selecto_updato`
-  is published on Hex.
-- The local `selecto_examples` app keeps local-ecosystem behavior by preferring
-  a vendored `../../selecto` dependency when present.
+- Livebooks install `selecto` from GitHub (`seeken/selecto`, branch `main`).
+- The `selecto_updato` tour installs both `selecto` and `selecto_updato` from
+  GitHub (`main` branch).
+- The local `selecto_examples` app also tracks `selecto` from GitHub `main`.

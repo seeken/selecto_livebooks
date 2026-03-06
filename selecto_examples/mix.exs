@@ -20,19 +20,10 @@ defmodule SelectoExamples.MixProject do
   end
 
   defp deps do
-    local_selecto_path = Path.expand("../../selecto", __DIR__)
-
-    selecto_dep =
-      if File.exists?(Path.join(local_selecto_path, "mix.exs")) do
-        {:selecto, path: local_selecto_path}
-      else
-        {:selecto, github: "seeken/selecto", branch: "main"}
-      end
-
     [
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.17"},
-      selecto_dep,
+      {:selecto, github: "seeken/selecto", branch: "main"},
       {:jason, "~> 1.4"},
       {:decimal, "~> 2.0"}
     ]
