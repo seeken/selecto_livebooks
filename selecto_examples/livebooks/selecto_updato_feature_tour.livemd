@@ -975,7 +975,7 @@ sql_preview =
 ## insert_from_query and filter_from_selecto
 
 Bridge read pipelines to write pipelines by copying rows from a Selecto query and reusing Selecto filters for downstream updates.
-`Selecto.query_filters/1` provides a stable way to extract filters from either legacy or set-based query structures.
+`Selecto.query_filters/1` provides a stable way to extract filters from set-based query structures.
 
 ```elixir
 order_selecto_domain = %{

@@ -997,7 +997,12 @@ subselect_query =
   |> Selecto.select(["order_number", "status", "total"])
   |> Selecto.filter({"status", {:in, ["processing", "shipped"]}})
   |> Selecto.subselect(
-    ["order_items[quantity, line_total]"],
+    [
+      %{
+        target_schema: :order_items,
+        fields: ["quantity", "line_total"]
+      }
+    ],
     format: :json_agg,
     alias_prefix: "items"
   )
