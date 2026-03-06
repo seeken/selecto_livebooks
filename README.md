@@ -50,12 +50,12 @@ Focused Selecto workbooks:
 
 ## Dependency Policy
 
-- Selecto-focused notebooks install Selecto directly from GitHub:
-  - `{:selecto, github: "seeken/selecto", branch: "main"}`
-- The Updato workbook installs both Selecto libraries from GitHub:
-  - `{:selecto, github: "seeken/selecto", branch: "main", override: true}`
-  - `{:selecto_updato, github: "seeken/selecto_updato", branch: "main"}`
-- The `selecto_examples` Mix project also tracks Selecto from GitHub `main`.
+- Selecto-focused notebooks install Selecto from a pinned GitHub SHA:
+  - `{:selecto, github: "seeken/selecto", ref: "f314798264093f4c6741552e53ef29a8c9e7c4f2"}`
+- The Updato workbook installs both Selecto libraries from pinned GitHub SHAs:
+  - `{:selecto, github: "seeken/selecto", ref: "f314798264093f4c6741552e53ef29a8c9e7c4f2", override: true}`
+  - `{:selecto_updato, github: "seeken/selecto_updato", ref: "a04bf54bc0adfb5e53e9b015417f0b26a81e24c5"}`
+- The `selecto_examples` Mix project tracks the same pinned Selecto SHA.
 
 ## Current Notebook Parity Notes
 

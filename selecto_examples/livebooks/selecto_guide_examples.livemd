@@ -1,7 +1,7 @@
 # Selecto Guide - Interactive Examples
 
 ```elixir
-selecto_dep = {:selecto, github: "seeken/selecto", branch: "main"}
+selecto_dep = {:selecto, github: "seeken/selecto", ref: "f314798264093f4c6741552e53ef29a8c9e7c4f2"}
 
 Mix.install([
   selecto_dep,
