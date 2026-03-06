@@ -57,7 +57,20 @@ Focused Selecto workbooks:
   - `{:selecto_updato, github: "seeken/selecto_updato", branch: "main"}`
 - The `selecto_examples` Mix project also tracks Selecto from GitHub `main`.
 
-## Dataset
+## Current Notebook Parity Notes
+
+- Output-format workbook includes explicit `execute_stream/2` contract guidance
+  (`supports?(:stream)` + `stream/4`) for adapter-backed streaming paths.
+- Updato feature tour includes tenant scope helper coverage
+  (`with_tenant/2`, `apply_tenant_scope/2`, `require_tenant_filter/2|3`, and
+  fail-fast scope validation).
+- Group-by workbook includes PostgreSQL ROLLUP ordering compatibility notes,
+  including PG18+ behavior where rollup compatibility wrapping can be disabled.
+
+Dependency requirement bumps are intentionally deferred until notebook behavior
+is re-validated end-to-end in your environment.
+
+## Database Model
 
 Seeds create an e-commerce style model with:
 

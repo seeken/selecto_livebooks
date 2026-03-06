@@ -515,7 +515,7 @@ string_syntax_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.select(["order_number", "customer.name"])
   |> Selecto.filter({"status", {:in, ["processing", "shipped"]}})
-  |> Selecto.subselect(["order_items[quantity, line_total]"])
+  |> Selecto.subselect(["order_items.quantity"])
   |> Selecto.order_by({"inserted_at", :desc})
   |> Selecto.limit(3)
 
