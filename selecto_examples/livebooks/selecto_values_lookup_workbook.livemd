@@ -5,7 +5,7 @@
 Run this cell first. It installs Selecto and related packages from GitHub for this Livebook session.
 
 ```elixir
-selecto_dep = {:selecto, github: "seeken/selecto", ref: "f314798264093f4c6741552e53ef29a8c9e7c4f2"}
+selecto_dep = {:selecto, github: "seeken/selecto", ref: "f1f937e5b08f4b90c9ac5bcfa33106551c23b60a"}
 
 Mix.install([
   selecto_dep,
@@ -150,6 +150,71 @@ defmodule ValuesLab.Helpers do
     IO.inspect(query.set.selection_shape, label: "Compiled shape", pretty: true)
     Selecto.Livebook.run_shape(label, query, preview_count: preview_count)
   end
+
+  def with_lookup(selecto, lookup_meta) do
+    join_id = Map.get(lookup_meta, :join_id, lookup_meta.as |> to_string() |> String.to_atom())
+    join_type = Map.get(lookup_meta, :join_type, :left)
+
+    join_fields =
+      Map.get(lookup_meta, :fields) ||
+        Enum.into(lookup_meta.columns, %{}, fn column ->
+          {String.to_atom(column), %{type: :string}}
+        end)
+
+    selecto
+    |> Selecto.with_values(
+      lookup_meta.rows,
+      columns: lookup_meta.columns,
+      as: lookup_meta.as,
+      join: [
+        id: join_id,
+        type: join_type,
+        owner_key: lookup_meta.owner_key,
+        related_key: lookup_meta.related_key,
+        fields: join_fields
+      ]
+    )
+  end
+
+  def status_lookup_meta(version) do
+    case to_string(version) do
+      "v2" ->
+        %{
+          as: "status_labels",
+          columns: ["status", "status_label"],
+          rows: [
+            ["processing", "In Progress"],
+            ["shipped", "On The Way"],
+            ["delivered", "Delivered"],
+            ["cancelled", "Canceled"]
+          ],
+          owner_key: :status,
+          related_key: :status,
+          fields: %{
+            status: %{type: :string},
+            status_label: %{type: :string}
+          }
+        }
+
+      _ ->
+        %{
+          as: "status_labels",
+          columns: ["status", "status_label"],
+          rows: [
+            ["processing", "In Progress"],
+            ["shipped", "In Transit"],
+            ["delivered", "Completed"],
+            ["cancelled", "Cancelled"]
+          ],
+          owner_key: :status,
+          related_key: :status,
+          fields: %{
+            status: %{type: :string},
+            status_label: %{type: :string}
+          }
+        }
+    end
+  end
 end
 ```
 
@@ -168,17 +233,15 @@ status_lookup_query =
       ["cancelled", "Cancelled"]
     ],
     columns: ["status", "status_label"],
-    as: "status_labels"
-  )
-  |> Selecto.join(:status_labels,
-    source: "status_labels",
-    type: :left,
-    owner_key: :status,
-    related_key: :status,
-    fields: %{
-      status: %{type: :string},
-      status_label: %{type: :string}
-    }
+    as: "status_labels",
+    join: [
+      owner_key: :status,
+      related_key: :status,
+      fields: %{
+        status: %{type: :string},
+        status_label: %{type: :string}
+      }
+    ]
   )
   |> Selecto.select(["order_number", "status", "status_labels.status_label", "total"])
   |> Selecto.order_by({"total", :desc})
@@ -201,18 +264,16 @@ status_priority_query =
       %{status: "delivered", priority_rank: 1, customer_label: "Complete"},
       %{status: "cancelled", priority_rank: 4, customer_label: "Cancelled"}
     ],
-    as: "status_priority"
-  )
-  |> Selecto.join(:status_priority,
-    source: "status_priority",
-    type: :left,
-    owner_key: :status,
-    related_key: :status,
-    fields: %{
-      status: %{type: :string},
-      priority_rank: %{type: :integer},
-      customer_label: %{type: :string}
-    }
+    as: "status_priority",
+    join: [
+      owner_key: :status,
+      related_key: :status,
+      fields: %{
+        status: %{type: :string},
+        priority_rank: %{type: :integer},
+        customer_label: %{type: :string}
+      }
+    ]
   )
   |> Selecto.select([
     "order_number",
@@ -244,17 +305,15 @@ region_lookup_query =
       ["France", "Europe"]
     ],
     columns: ["shipping_country", "region_bucket"],
-    as: "country_region_map"
-  )
-  |> Selecto.join(:country_region_map,
-    source: "country_region_map",
-    type: :left,
-    owner_key: :shipping_country,
-    related_key: :shipping_country,
-    fields: %{
-      shipping_country: %{type: :string},
-      region_bucket: %{type: :string}
-    }
+    as: "country_region_map",
+    join: [
+      owner_key: :shipping_country,
+      related_key: :shipping_country,
+      fields: %{
+        shipping_country: %{type: :string},
+        region_bucket: %{type: :string}
+      }
+    ]
   )
   |> Selecto.select([
     "order_number",
@@ -305,7 +364,15 @@ staged_lookup_query =
       ["cancelled", "Closed"]
     ],
     columns: ["status", "status_group"],
-    as: "status_group_lookup"
+    as: "status_group_lookup",
+    join: [
+      owner_key: :status,
+      related_key: :status,
+      fields: %{
+        status: %{type: :string},
+        status_group: %{type: :string}
+      }
+    ]
   )
   |> Selecto.join(:high_value_orders,
     source: "high_value_orders",
@@ -316,16 +383,6 @@ staged_lookup_query =
       id: %{type: :integer},
       status: %{type: :string},
       total: %{type: :decimal}
-    }
-  )
-  |> Selecto.join(:status_group_lookup,
-    source: "status_group_lookup",
-    type: :left,
-    owner_key: :status,
-    related_key: :status,
-    fields: %{
-      status: %{type: :string},
-      status_group: %{type: :string}
     }
   )
   |> Selecto.select([
@@ -354,18 +411,16 @@ priority_scored_query =
       %{status: "delivered", business_rank: 3, board_bucket: "Completed"},
       %{status: "cancelled", business_rank: 4, board_bucket: "Closed exception"}
     ],
-    as: "status_business_priority"
-  )
-  |> Selecto.join(:status_business_priority,
-    source: "status_business_priority",
-    type: :left,
-    owner_key: :status,
-    related_key: :status,
-    fields: %{
-      status: %{type: :string},
-      business_rank: %{type: :integer},
-      board_bucket: %{type: :string}
-    }
+    as: "status_business_priority",
+    join: [
+      owner_key: :status,
+      related_key: :status,
+      fields: %{
+        status: %{type: :string},
+        business_rank: %{type: :integer},
+        board_bucket: %{type: :string}
+      }
+    ]
   )
   |> Selecto.select([
     "order_number",
@@ -395,18 +450,16 @@ shaped_lookup_query =
       %{status: "delivered", priority_rank: 1, customer_label: "Complete"},
       %{status: "cancelled", priority_rank: 4, customer_label: "Cancelled"}
     ],
-    as: "status_priority_shape"
-  )
-  |> Selecto.join(:status_priority_shape,
-    source: "status_priority_shape",
-    type: :left,
-    owner_key: :status,
-    related_key: :status,
-    fields: %{
-      status: %{type: :string},
-      priority_rank: %{type: :integer},
-      customer_label: %{type: :string}
-    }
+    as: "status_priority_shape",
+    join: [
+      owner_key: :status,
+      related_key: :status,
+      fields: %{
+        status: %{type: :string},
+        priority_rank: %{type: :integer},
+        customer_label: %{type: :string}
+      }
+    ]
   )
   |> Selecto.select(["order_number", "status", "total"])
   |> Selecto.select_shape([
@@ -421,10 +474,88 @@ shaped_lookup_query =
 ValuesLab.Helpers.run_shape("Shaped VALUES lookup output", shaped_lookup_query, 10)
 ```
 
-## Next Steps
+## 8) Inline Lookup Versioning Pattern
+
+Swap lookup rows by environment/version while keeping query structure unchanged.
+
+```elixir
+lookup_version = System.get_env("VALUES_LOOKUP_VERSION", "v1")
+status_lookup_meta = ValuesLab.Helpers.status_lookup_meta(lookup_version)
+
+versioned_lookup_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> ValuesLab.Helpers.with_lookup(status_lookup_meta)
+  |> Selecto.select(["order_number", "status", "status_labels.status_label", "total"])
+  |> Selecto.order_by({"total", :desc})
+  |> Selecto.limit(10)
+
+ValuesLab.Helpers.run("Versioned inline lookup (#{lookup_version})", versioned_lookup_query, 10)
+```
+
+## 9) VALUES Lookup vs Persisted Lookup-Table Join
+
+Compare behavior using a persisted lookup table (`livebook_status_lookup`) with the same mapping.
+
+```elixir
+status_rows = ValuesLab.Helpers.status_lookup_meta("v1").rows
+
+Ecto.Adapters.SQL.query!(
+  config.repo,
+  """
+  CREATE TABLE IF NOT EXISTS livebook_status_lookup (
+    status text PRIMARY KEY,
+    status_label text NOT NULL
+  )
+  """,
+  []
+)
+
+Enum.each(status_rows, fn [status, status_label] ->
+  Ecto.Adapters.SQL.query!(
+    config.repo,
+    """
+    INSERT INTO livebook_status_lookup (status, status_label)
+    VALUES ($1, $2)
+    ON CONFLICT (status) DO UPDATE SET status_label = EXCLUDED.status_label
+    """,
+    [status, status_label]
+  )
+end)
+
+values_lookup_compare_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> ValuesLab.Helpers.with_lookup(ValuesLab.Helpers.status_lookup_meta("v1"))
+  |> Selecto.select(["order_number", "status", "status_labels.status_label", "total"])
+  |> Selecto.order_by({"total", :desc})
+  |> Selecto.limit(10)
+
+persisted_lookup_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.join(:livebook_status_lookup,
+    source: "livebook_status_lookup",
+    type: :left,
+    owner_key: :status,
+    related_key: :status,
+    fields: %{
+      status: %{type: :string},
+      status_label: %{type: :string}
+    }
+  )
+  |> Selecto.select(["order_number", "status", "livebook_status_lookup.status_label", "total"])
+  |> Selecto.order_by({"total", :desc})
+  |> Selecto.limit(10)
+
+ValuesLab.Helpers.explain("VALUES lookup", values_lookup_compare_query)
+ValuesLab.Helpers.explain("Persisted lookup table", persisted_lookup_query)
+
+ValuesLab.Helpers.run("VALUES lookup results", values_lookup_compare_query, 10)
+ValuesLab.Helpers.run("Persisted lookup results", persisted_lookup_query, 10)
+```
+
+## More Next Steps
 
 To extend this workbook, add:
 
-1. Inline lookup versioning patterns (swap lookup sets by environment)
-2. A workbook cell comparing VALUES lookup versus persisted lookup-table joins
-3. A reusable helper that composes `with_values` + join definitions from a single metadata map
+1. A helper that asserts lookup-row completeness before running query cells
+2. A benchmark cell that compares query planning cost (`EXPLAIN ANALYZE`) for VALUES vs persisted lookup
+3. A cleanup cell that drops `livebook_status_lookup` when the comparison section is no longer needed

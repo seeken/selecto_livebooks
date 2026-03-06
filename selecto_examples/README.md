@@ -89,7 +89,7 @@ or any focused workbook under `selecto_examples/livebooks/`:
 ## Notes
 
 - Livebooks install `selecto` from GitHub pinned to
-  `f314798264093f4c6741552e53ef29a8c9e7c4f2`.
+  `f1f937e5b08f4b90c9ac5bcfa33106551c23b60a`.
 - The `selecto_updato` tour installs both `selecto` and `selecto_updato` from
   pinned GitHub SHAs.
 - The local `selecto_examples` app tracks the same pinned Selecto SHA.

@@ -5,7 +5,7 @@
 Run this cell first. It installs Selecto and supporting libraries from GitHub for this Livebook session.
 
 ```elixir
-selecto_dep = {:selecto, github: "seeken/selecto", ref: "f314798264093f4c6741552e53ef29a8c9e7c4f2"}
+selecto_dep = {:selecto, github: "seeken/selecto", ref: "f1f937e5b08f4b90c9ac5bcfa33106551c23b60a"}
 
 Mix.install([
   selecto_dep,
