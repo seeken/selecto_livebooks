@@ -431,6 +431,7 @@ ValuesLab.Helpers.run("Business-priority ordering via VALUES", priority_scored_q
 ## 7) Shaped Lookup Payloads with `select_shape/2`
 
 Package lookup-enriched values into nested tuples for API-ready output structures.
+`select_shape/2` defines the final projection, so you do not need a preceding `select/2` in the same query chain.
 
 ```elixir
 shaped_lookup_query =
@@ -453,7 +454,6 @@ shaped_lookup_query =
       }
     ]
   )
-  |> Selecto.select(["order_number", "status", "total"])
   |> Selecto.select_shape([
     "order_number",
     {"status", "status_priority_shape.customer_label"},

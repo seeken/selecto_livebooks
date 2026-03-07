@@ -387,11 +387,11 @@ IO.puts("Counts match? #{length(json_rows) == length(rel_rows)}")
 
 Project JSON-derived columns and package them into nested output tuples for structured rendering.
 When shaping, use explicit field selectors for JSON paths (rather than alias-only names) so field resolution remains valid.
+`select_shape/2` is the final projection step, so a prior `select/2` is unnecessary in the same pipeline.
 
 ```elixir
 json_shaped_query =
   Selecto.configure(config.product_domain, config.repo)
-  |> Selecto.select(["name", "sku", "price"])
   |> Selecto.json_select([
     {:json_extract_text, "metadata", "$.price_band", as: "price_band"},
     {:json_extract_text, "metadata", "$.warehouse.zone", as: "warehouse_zone"}
