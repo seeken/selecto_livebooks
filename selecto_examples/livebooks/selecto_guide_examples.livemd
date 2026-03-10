@@ -1,7 +1,7 @@
 # Selecto Guide - Interactive Examples
 
 ```elixir
-selecto_dep = {:selecto, github: "seeken/selecto", ref: "777483e861c263161760be06b781194839b9aa28"}
+selecto_dep = {:selecto, github: "seeken/selecto", ref: "ce8b2bd9357660badd1454021e6272dcc0bbbb7c"}
 
 Mix.install([
   selecto_dep,
@@ -3098,16 +3098,20 @@ Expected output checks (`gen_sql/2` vs `to_sql/1`):
 
 This section focuses on Advanced Filter Operators (`:subquery`, `:text_search`). Run the examples in order and compare the generated SQL checks with the returned rows to connect API calls to query behavior.
 
-### Use SQL Subqueries and Full-Text Search from `Selecto.filter/2`
+### Use Composed Subqueries and Full-Text Search from `Selecto.filter/2`
 
 Business question: How do we express subquery membership and text search using typed filter operators?
 
 ```elixir
+premium_customers_subquery =
+  Selecto.configure(config.customer_domain, config.repo)
+  |> Selecto.select(["id"])
+  |> Selecto.filter({"tier", "premium"})
+
 subquery_filter_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.select(["order_number", "customer_id", "status", "total"])
-  # Keep parentheses in the raw subquery for compatibility with older Selecto builds.
-  |> Selecto.filter({"customer_id", {:subquery, :in, "(SELECT id FROM customers WHERE tier = 'premium')", []}})
+  |> Selecto.filter({"customer_id", {:subquery, :in, premium_customers_subquery}})
   |> Selecto.order_by({"total", :desc})
   |> Selecto.limit(10)
 
@@ -3153,7 +3157,7 @@ end
 
 Expected output checks (Advanced Filters):
 
-* Subquery filter emits `IN (SELECT ...)` style SQL via `{:subquery, ...}`
+* Subquery filter emits `IN (SELECT ...)` style SQL via a composed Selecto subquery
 * Text-search filter emits PostgreSQL full-text search expression
 * Both filter forms can be composed with standard `select/order/limit`
 

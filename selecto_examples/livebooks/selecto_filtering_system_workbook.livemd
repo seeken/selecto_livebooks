@@ -5,7 +5,7 @@
 Run this cell first. It installs Selecto and related packages from GitHub for this Livebook session.
 
 ```elixir
-selecto_dep = {:selecto, github: "seeken/selecto", ref: "777483e861c263161760be06b781194839b9aa28"}
+selecto_dep = {:selecto, github: "seeken/selecto", ref: "ce8b2bd9357660badd1454021e6272dcc0bbbb7c"}
 
 Mix.install([
   selecto_dep,
@@ -368,16 +368,25 @@ FilteringLab.Helpers.run("Composable multi-stage filters", composable_filter_que
 
 ## 8) Subquery Filters
 
-Use `{:subquery, :in, sql, params}` for controlled SQL subqueries.
+Use `{:subquery, :in, query}` with a composed Selecto subquery.
 
 ```elixir
+customer_subquery_domain = %{
+  name: "Customers",
+  source: config.order_domain.schemas.customers |> Map.put_new(:associations, %{}),
+  schemas: %{},
+  joins: %{}
+}
+
+eligible_customers_subquery =
+  Selecto.configure(customer_subquery_domain, config.repo)
+  |> Selecto.select(["id"])
+  |> Selecto.filter({"tier", {:in, ["gold", "platinum"]}})
+
 subquery_filter_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.select(["order_number", "status", "total", "customer.name", "customer.tier"])
-  |> Selecto.filter(
-    {"customer_id",
-     {:subquery, :in, "SELECT id FROM customers WHERE tier IN ('gold', 'platinum')", []}}
-  )
+  |> Selecto.filter({"customer_id", {:subquery, :in, eligible_customers_subquery}})
   |> Selecto.order_by({"total", :desc})
   |> Selecto.limit(10)
 
