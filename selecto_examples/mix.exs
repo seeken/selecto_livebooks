@@ -5,7 +5,7 @@ defmodule SelectoExamples.MixProject do
     [
       app: :selecto_examples,
       version: "0.1.0",
-      elixir: "~> 1.17",
+      elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps()
