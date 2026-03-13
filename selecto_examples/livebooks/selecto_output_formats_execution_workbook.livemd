@@ -5,9 +5,9 @@
 Run this cell first. It installs Selecto and related packages from GitHub for this Livebook session.
 
 ```elixir
-selecto_dep = {:selecto, github: "seeken/selecto", ref: "0603beaea1555217db49be0ab79c240c0b629416", override: true}
-selecto_db_adapter_dep = {:selecto_db_adapter, github: "seeken/selecto_db_adapter", ref: "958f660806de3d778816f21883b51f889178f35a", override: true}
-selecto_db_postgresql_dep = {:selecto_db_postgresql, github: "seeken/selecto_db_postgresql", ref: "e14bb7ab0c5835b7bdaa1865f14eed5099687e2a", override: true}
+selecto_dep = {:selecto, github: "seeken/selecto", ref: "d294cfbbf661b068e932cde08331bed6b53a1594", override: true}
+selecto_db_adapter_dep = {:selecto_db_adapter, github: "seeken/selecto_db_adapter", ref: "3a0678bf2867dfe81121e0f12ab5889b946c1b1a", override: true}
+selecto_db_postgresql_dep = {:selecto_db_postgresql, github: "seeken/selecto_db_postgresql", ref: "8692208cc5972839eacb263dce7cd7a6b0a99b6d", override: true}
 
 Mix.install([
   selecto_dep,
@@ -336,13 +336,13 @@ end
 
 `{:stream, ...}` format and `execute_stream/2` are related but not identical.
 
-- `format: {:stream, :maps}` transforms a normal execute response into a lazy stream.
-- `Selecto.execute_stream/2` asks the adapter/connection path to stream rows directly.
+* `format: {:stream, :maps}` transforms a normal execute response into a lazy stream.
+* `Selecto.execute_stream/2` asks the adapter/connection path to stream rows directly.
 
 For adapter-backed paths, streaming requires an explicit contract:
 
-- adapter must return `true` for `supports?(:stream)`
-- adapter must implement `stream/4`
+* adapter must return `true` for `supports?(:stream)`
+* adapter must implement `stream/4`
 
 ```elixir
 stream_query =

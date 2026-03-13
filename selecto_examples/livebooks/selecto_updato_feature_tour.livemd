@@ -1,9 +1,9 @@
 # SelectoUpdato Complete Feature Tour
 
 ```elixir
-selecto_dep = {:selecto, github: "seeken/selecto", ref: "0603beaea1555217db49be0ab79c240c0b629416", override: true}
-selecto_db_adapter_dep = {:selecto_db_adapter, github: "seeken/selecto_db_adapter", ref: "958f660806de3d778816f21883b51f889178f35a", override: true}
-selecto_db_postgresql_dep = {:selecto_db_postgresql, github: "seeken/selecto_db_postgresql", ref: "e14bb7ab0c5835b7bdaa1865f14eed5099687e2a", override: true}
+selecto_dep = {:selecto, github: "seeken/selecto", ref: "d294cfbbf661b068e932cde08331bed6b53a1594", override: true}
+selecto_db_adapter_dep = {:selecto_db_adapter, github: "seeken/selecto_db_adapter", ref: "3a0678bf2867dfe81121e0f12ab5889b946c1b1a", override: true}
+selecto_db_postgresql_dep = {:selecto_db_postgresql, github: "seeken/selecto_db_postgresql", ref: "8692208cc5972839eacb263dce7cd7a6b0a99b6d", override: true}
 updato_dep = {:selecto_updato, github: "seeken/selecto_updato", ref: "a04bf54bc0adfb5e53e9b015417f0b26a81e24c5"}
 
 Mix.install([

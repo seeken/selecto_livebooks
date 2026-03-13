@@ -5,9 +5,9 @@
 Run this cell first. It installs Selecto and supporting libraries from GitHub for this Livebook session.
 
 ```elixir
-selecto_dep = {:selecto, github: "seeken/selecto", ref: "0603beaea1555217db49be0ab79c240c0b629416", override: true}
-selecto_db_adapter_dep = {:selecto_db_adapter, github: "seeken/selecto_db_adapter", ref: "958f660806de3d778816f21883b51f889178f35a", override: true}
-selecto_db_postgresql_dep = {:selecto_db_postgresql, github: "seeken/selecto_db_postgresql", ref: "e14bb7ab0c5835b7bdaa1865f14eed5099687e2a", override: true}
+selecto_dep = {:selecto, github: "seeken/selecto", ref: "d294cfbbf661b068e932cde08331bed6b53a1594", override: true}
+selecto_db_adapter_dep = {:selecto_db_adapter, github: "seeken/selecto_db_adapter", ref: "3a0678bf2867dfe81121e0f12ab5889b946c1b1a", override: true}
+selecto_db_postgresql_dep = {:selecto_db_postgresql, github: "seeken/selecto_db_postgresql", ref: "8692208cc5972839eacb263dce7cd7a6b0a99b6d", override: true}
 
 Mix.install([
   selecto_dep,
@@ -644,6 +644,7 @@ end)
 
 Filters added before `pivot/3` are preserved as pre-pivot constraints.
 Filters added after `pivot/3` are post-pivot constraints on the new root.
+For the current Selecto build, post-pivot filters should target the pivot root field name directly (for example `"quantity"`), so this example uses `Selecto.post_pivot_filter/2`.
 This cell compares SQL and results for:
 
 1. pre-pivot only
@@ -665,7 +666,7 @@ pivot_pre_and_post_filter_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.filter({"status", "delivered"})
   |> Selecto.pivot(:order_items, subquery_strategy: :exists)
-  |> Selecto.filter({"order_items.quantity", {:gt, 2}})
+  |> Selecto.post_pivot_filter({"quantity", 2})
   |> Selecto.select([
     {:field, "order_items.product_id", "product_id"},
     {:field, "order_items.quantity", "quantity"}
@@ -676,7 +677,7 @@ pivot_post_only_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.filter({"status", "delivered"})
   |> Selecto.pivot(:order_items, subquery_strategy: :exists, preserve_filters: false)
-  |> Selecto.filter({"order_items.quantity", {:gt, 2}})
+  |> Selecto.post_pivot_filter({"quantity", 2})
   |> Selecto.select([
     {:field, "order_items.product_id", "product_id"},
     {:field, "order_items.quantity", "quantity"}

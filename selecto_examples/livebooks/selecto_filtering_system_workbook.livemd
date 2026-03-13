@@ -5,9 +5,9 @@
 Run this cell first. It installs Selecto and related packages from GitHub for this Livebook session.
 
 ```elixir
-selecto_dep = {:selecto, github: "seeken/selecto", ref: "0603beaea1555217db49be0ab79c240c0b629416", override: true}
-selecto_db_adapter_dep = {:selecto_db_adapter, github: "seeken/selecto_db_adapter", ref: "958f660806de3d778816f21883b51f889178f35a", override: true}
-selecto_db_postgresql_dep = {:selecto_db_postgresql, github: "seeken/selecto_db_postgresql", ref: "e14bb7ab0c5835b7bdaa1865f14eed5099687e2a", override: true}
+selecto_dep = {:selecto, github: "seeken/selecto", ref: "d294cfbbf661b068e932cde08331bed6b53a1594", override: true}
+selecto_db_adapter_dep = {:selecto_db_adapter, github: "seeken/selecto_db_adapter", ref: "3a0678bf2867dfe81121e0f12ab5889b946c1b1a", override: true}
+selecto_db_postgresql_dep = {:selecto_db_postgresql, github: "seeken/selecto_db_postgresql", ref: "8692208cc5972839eacb263dce7cd7a6b0a99b6d", override: true}
 
 Mix.install([
   selecto_dep,
@@ -467,9 +467,10 @@ json_array_filter_query =
 FilteringLab.Helpers.run("JSON + array filters", json_array_filter_query)
 ```
 
-## 10) Equivalent Filters Before vs After `pivot/3`
+## 10) Pre- vs Post-Pivot Filters
 
 Compare pre-pivot and post-pivot filtering behavior and inspect the resulting SQL.
+For the current Selecto build, post-pivot filters should target the pivot root field name directly (for example `"quantity"`), so this example uses `Selecto.post_pivot_filter/2`.
 
 ```elixir
 pivot_pre_filter_query =
@@ -483,7 +484,7 @@ pivot_pre_and_post_filter_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.filter({"status", "delivered"})
   |> Selecto.pivot(:order_items, subquery_strategy: :exists)
-  |> Selecto.filter({"order_items.quantity", {:gt, 2}})
+  |> Selecto.post_pivot_filter({"quantity", 2})
   |> Selecto.select(["order_items.product_id", "order_items.quantity", "order_items.line_total"])
   |> Selecto.limit(10)
 
@@ -491,7 +492,7 @@ pivot_post_only_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.filter({"status", "delivered"})
   |> Selecto.pivot(:order_items, subquery_strategy: :exists, preserve_filters: false)
-  |> Selecto.filter({"order_items.quantity", {:gt, 2}})
+  |> Selecto.post_pivot_filter({"quantity", 2})
   |> Selecto.select(["order_items.product_id", "order_items.quantity", "order_items.line_total"])
   |> Selecto.limit(10)
 
