@@ -23,7 +23,16 @@ defmodule SelectoExamples.MixProject do
     [
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.17"},
-      {:selecto, github: "seeken/selecto", ref: "777483e861c263161760be06b781194839b9aa28"},
+      {:selecto_db_adapter,
+       github: "seeken/selecto_db_adapter",
+       ref: "958f660806de3d778816f21883b51f889178f35a",
+       override: true},
+      {:selecto,
+       github: "seeken/selecto", ref: "0603beaea1555217db49be0ab79c240c0b629416", override: true},
+      {:selecto_db_postgresql,
+       github: "seeken/selecto_db_postgresql",
+       ref: "e14bb7ab0c5835b7bdaa1865f14eed5099687e2a",
+       override: true},
       {:jason, "~> 1.4"},
       {:decimal, "~> 2.0"}
     ]

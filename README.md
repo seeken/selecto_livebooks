@@ -50,12 +50,15 @@ Focused Selecto workbooks:
 
 ## Dependency Policy
 
-- Selecto-focused notebooks install Selecto from a pinned GitHub SHA:
-  - `{:selecto, github: "seeken/selecto", ref: "777483e861c263161760be06b781194839b9aa28"}`
-- The Updato workbook installs both Selecto libraries from pinned GitHub SHAs:
-  - `{:selecto, github: "seeken/selecto", ref: "777483e861c263161760be06b781194839b9aa28", override: true}`
-  - `{:selecto_updato, github: "seeken/selecto_updato", ref: "a04bf54bc0adfb5e53e9b015417f0b26a81e24c5"}`
-- The `selecto_examples` Mix project tracks the same pinned Selecto SHA.
+- Selecto-focused notebooks install pinned GitHub SHAs for:
+  - `selecto`
+  - `selecto_db_adapter`
+  - `selecto_db_postgresql`
+- The Updato workbook installs pinned SHAs for both `selecto` and
+  `selecto_updato`, plus the adapter packages required by the external adapter
+  model.
+- The `selecto_examples` Mix project tracks the same pinned Selecto and adapter
+  SHAs so workbook code and the example app stay aligned.
 
 ## Current Notebook Parity Notes
 

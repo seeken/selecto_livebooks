@@ -5,10 +5,14 @@
 Run this cell first. It installs Selecto and supporting libraries from GitHub for this Livebook session.
 
 ```elixir
-selecto_dep = {:selecto, github: "seeken/selecto", ref: "777483e861c263161760be06b781194839b9aa28"}
+selecto_dep = {:selecto, github: "seeken/selecto", ref: "0603beaea1555217db49be0ab79c240c0b629416", override: true}
+selecto_db_adapter_dep = {:selecto_db_adapter, github: "seeken/selecto_db_adapter", ref: "958f660806de3d778816f21883b51f889178f35a", override: true}
+selecto_db_postgresql_dep = {:selecto_db_postgresql, github: "seeken/selecto_db_postgresql", ref: "e14bb7ab0c5835b7bdaa1865f14eed5099687e2a", override: true}
 
 Mix.install([
   selecto_dep,
+  selecto_db_adapter_dep,
+  selecto_db_postgresql_dep,
   {:postgrex, "~> 0.17"},
   {:ecto_sql, "~> 3.11"},
   {:jason, "~> 1.4"},
