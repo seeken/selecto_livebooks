@@ -5,8 +5,8 @@ It ships a runnable example app plus focused workbooks for major feature areas.
 
 ## Structure
 
-- `selecto_examples/` - Ecto app with schemas, domains, migrations, and seeds
-- `selecto_examples/livebooks/` - interactive notebooks grouped by topic
+- `config/`, `lib/`, `priv/`, `test/` - runnable example app and dataset
+- `livebooks/` - interactive notebooks grouped by topic
 
 ## Workbook Index
 
@@ -39,14 +39,13 @@ Focused Selecto workbooks:
 
 1. Prepare the example app:
    ```bash
-   cd selecto_examples
    mix setup
    ```
-2. Start Livebook from repo root or inside `selecto_examples`:
+2. Start Livebook from the project root:
    ```bash
    livebook server
    ```
-3. Open any notebook under `selecto_examples/livebooks/`.
+3. Open any notebook under `livebooks/`.
 
 ## Dependency Policy
 
@@ -57,7 +56,7 @@ Focused Selecto workbooks:
 - The Updato workbook installs pinned SHAs for both `selecto` and
   `selecto_updato`, plus the adapter packages required by the external adapter
   model.
-- The `selecto_examples` Mix project tracks the same pinned Selecto and adapter
+- The `selecto_livebooks` Mix project tracks the same pinned Selecto and adapter
   SHAs so workbook code and the example app stay aligned.
 
 ## Current Notebook Parity Notes
