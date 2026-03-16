@@ -51,7 +51,6 @@ Focused Selecto workbooks:
 
 - Selecto-focused notebooks install pinned GitHub SHAs for:
   - `selecto`
-  - `selecto_db_adapter`
   - `selecto_db_postgresql`
 - The Updato workbook installs pinned SHAs for both `selecto` and
   `selecto_updato`, plus the adapter packages required by the external adapter
