@@ -961,27 +961,27 @@ case result do
 end
 ```
 
-### Pivot Example: Retarget Delivered Orders to Line Items
+### Retarget Example: Retarget Delivered Orders to Line Items
 
 ```elixir
-pivot_query =
+retarget_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.filter({"status", "delivered"})
-  |> Selecto.pivot(:order_items, subquery_strategy: :exists)
+  |> Selecto.retarget(:order_items, subquery_strategy: :exists)
   |> Selecto.select([
     {:field, "order_items.product_id", "product_id"},
     {:field, "order_items.quantity", "quantity"},
     {:field, "order_items.line_total", "line_total"}
   ])
 
-{pivot_sql, pivot_params} = Selecto.to_sql(pivot_query)
-IO.puts("Generated SQL for Pivot query:\n")
-IO.puts(pivot_sql)
-IO.puts("\nParams: #{inspect(pivot_params)}")
+{retarget_sql, retarget_params} = Selecto.to_sql(retarget_query)
+IO.puts("Generated SQL for Retarget query:\n")
+IO.puts(retarget_sql)
+IO.puts("\nParams: #{inspect(retarget_params)}")
 
-case SelectoLivebooks.LivebookHelpers.execute_with_checks(pivot_query, example: "Pivot Query") do
+case SelectoLivebooks.LivebookHelpers.execute_with_checks(retarget_query, example: "Retarget Query") do
   {:ok, {rows, columns, _aliases}} ->
-    IO.puts("\nLine Items from Delivered Orders (pivoted view):")
+    IO.puts("\nLine Items from Delivered Orders (retargeted view):")
     IO.puts("Columns: #{inspect(columns)}")
     Enum.each(Enum.take(rows, 10), fn [product_id, quantity, line_total] ->
       IO.puts("  product_id=#{product_id}, qty=#{quantity}, line_total=$#{Decimal.round(line_total || Decimal.new(0), 2)}")
@@ -3478,7 +3478,7 @@ This Livebook has demonstrated the core features of Selecto:
 6. **Joins** - Automatic joins via dot notation
 7. **Composable Patterns** - Building reusable query functions
 8. **Output Formats** - Transforming results for different use cases
-9. **Pivoting** - Retargeting query focus to related schemas while preserving filter context
+9. **Retargeting** - Retargeting query focus to related schemas while preserving filter context
 10. **Subselects** - Embedding related rows as JSON arrays in each parent row
 11. **Set Operations** - Combining results with UNION / INTERSECT / EXCEPT
 12. **CTEs** - Using WITH and WITH RECURSIVE for modular query construction

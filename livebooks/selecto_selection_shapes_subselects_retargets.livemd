@@ -1,4 +1,4 @@
-# Selecto Focus Notebook: Selection, Shapes, Subselects, and Pivots
+# Selecto Focus Notebook: Selection, Shapes, Subselects, and Retargets
 
 ## Setup 1) Install Dependencies
 
@@ -29,7 +29,7 @@ This notebook focuses on four related query-building patterns:
 1. Selection (`Selecto.select/2`)
 2. Selection shapes (`Selecto.select_shape/2` + `Selecto.execute_shape/2`)
 3. Subselects (`Selecto.subselect/3`)
-4. Pivots (`Selecto.pivot/3`)
+4. Retargets (`Selecto.retarget/3`)
 
 ### Domain Join Map
 
@@ -53,12 +53,12 @@ flowchart LR
   flat["Select flat row output"]
   shaped["Select shape and execute shape"]
   sub["Subselect aggregated related data"]
-  pivot["Pivot to new root table"]
+  retarget["Retarget to new root table"]
 
   base --> flat
   base --> shaped
   base --> sub
-  base --> pivot
+  base --> retarget
 ```
 
 Before running, initialize the sample database:
@@ -548,41 +548,41 @@ map_syntax_query =
 SelectionFocus.Helpers.run("Subselect map syntax", map_syntax_query)
 ```
 
-## 4) Pivoting (`pivot/3`)
+## 4) Retargeting (`retarget/3`)
 
-Pivoting changes the query root. Here we pivot delivered orders to `order_items`
+Retargeting changes the query root. Here we retarget delivered orders to `order_items`
 to analyze line-level data.
 
 ```mermaid
 flowchart LR
-  pre["Orders root with pre pivot filters"]
-  pivot_call["Pivot to order items"]
-  post["Order items root with post pivot filters"]
+  pre["Orders root with pre retarget filters"]
+  retarget_call["Retarget to order items"]
+  post["Order items root with post retarget filters"]
   out["Line level rows"]
 
-  pre --> pivot_call --> post --> out
+  pre --> retarget_call --> post --> out
 ```
 
-This first pivot cell builds a line-level query rooted at `order_items` and previews raw rows.
+This first retarget cell builds a line-level query rooted at `order_items` and previews raw rows.
 
 ```elixir
-pivot_query =
+retarget_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.filter({"status", "delivered"})
-  |> Selecto.pivot(:order_items, subquery_strategy: :exists)
+  |> Selecto.retarget(:order_items, subquery_strategy: :exists)
   |> Selecto.select([
     {:field, "order_items.product_id", "product_id"},
     {:field, "order_items.quantity", "quantity"},
     {:field, "order_items.line_total", "line_total"}
   ])
 
-SelectionFocus.Helpers.run("Pivot query (line-level rows)", pivot_query)
+SelectionFocus.Helpers.run("Retarget query (line-level rows)", retarget_query)
 ```
 
-This follow-up cell aggregates pivoted rows into product-level metrics (delivered quantity and revenue), then prints the top results.
+This follow-up cell aggregates retargeted rows into product-level metrics (delivered quantity and revenue), then prints the top results.
 
 ```elixir
-{:ok, {rows, _columns, _aliases}} = Selecto.execute(pivot_query)
+{:ok, {rows, _columns, _aliases}} = Selecto.execute(retarget_query)
 
 rows
 |> Enum.group_by(fn [product_id, _quantity, _line_total] -> product_id end)
@@ -607,16 +607,16 @@ end)
 :ok
 ```
 
-## 4.1) Pivot Strategy Comparison (`:in`, `:exists`, `:join`)
+## 4.1) Retarget Strategy Comparison (`:in`, `:exists`, `:join`)
 
-This cell compares generated SQL and row counts across supported pivot subquery strategies.
+This cell compares generated SQL and row counts across supported retarget subquery strategies.
 
 ```elixir
 Enum.each([:in, :exists, :join], fn strategy ->
   query =
     Selecto.configure(config.order_domain, config.repo)
     |> Selecto.filter({"status", "delivered"})
-    |> Selecto.pivot(:order_items, subquery_strategy: strategy)
+    |> Selecto.retarget(:order_items, subquery_strategy: strategy)
     |> Selecto.select([
       {:field, "order_items.product_id", "product_id"},
       {:field, "order_items.quantity", "quantity"},
@@ -624,7 +624,7 @@ Enum.each([:in, :exists, :join], fn strategy ->
     ])
     |> Selecto.limit(5)
 
-  SelectionFocus.Helpers.explain("Pivot strategy #{strategy}", query)
+  SelectionFocus.Helpers.explain("Retarget strategy #{strategy}", query)
 
   case Selecto.execute(query) do
     {:ok, {strategy_rows, _columns, _aliases}} ->
@@ -639,44 +639,44 @@ end)
 :ok
 ```
 
-## 4.2) Pre- vs Post-Pivot Filters (`preserve_filters`)
+## 4.2) Pre- vs Post-Retarget Filters (`preserve_filters`)
 
-Filters added before `pivot/3` are preserved as pre-pivot constraints.
-Filters added after `pivot/3` are post-pivot constraints on the new root.
-For the current Selecto build, post-pivot filters should target the pivot root field name directly (for example `"quantity"`), so this example uses `Selecto.post_pivot_filter/2`.
+Filters added before `retarget/3` are preserved as pre-retarget constraints.
+Filters added after `retarget/3` are post-retarget constraints on the new root.
+For the current Selecto build, post-retarget filters should target the retarget root field name directly (for example `"quantity"`), so this example uses `Selecto.post_retarget_filter/2`.
 This cell compares SQL and results for:
 
-1. pre-pivot only
-2. pre + post pivot
-3. post-pivot only with `preserve_filters: false`
+1. pre-retarget only
+2. pre + post retarget
+3. post-retarget only with `preserve_filters: false`
 
 ```elixir
-pivot_pre_filter_query =
+retarget_pre_filter_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.filter({"status", "delivered"})
-  |> Selecto.pivot(:order_items, subquery_strategy: :exists)
+  |> Selecto.retarget(:order_items, subquery_strategy: :exists)
   |> Selecto.select([
     {:field, "order_items.product_id", "product_id"},
     {:field, "order_items.quantity", "quantity"}
   ])
   |> Selecto.limit(5)
 
-pivot_pre_and_post_filter_query =
+retarget_pre_and_post_filter_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.filter({"status", "delivered"})
-  |> Selecto.pivot(:order_items, subquery_strategy: :exists)
-  |> Selecto.post_pivot_filter({"quantity", 2})
+  |> Selecto.retarget(:order_items, subquery_strategy: :exists)
+  |> Selecto.post_retarget_filter({"quantity", 2})
   |> Selecto.select([
     {:field, "order_items.product_id", "product_id"},
     {:field, "order_items.quantity", "quantity"}
   ])
   |> Selecto.limit(5)
 
-pivot_post_only_query =
+retarget_post_only_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.filter({"status", "delivered"})
-  |> Selecto.pivot(:order_items, subquery_strategy: :exists, preserve_filters: false)
-  |> Selecto.post_pivot_filter({"quantity", 2})
+  |> Selecto.retarget(:order_items, subquery_strategy: :exists, preserve_filters: false)
+  |> Selecto.post_retarget_filter({"quantity", 2})
   |> Selecto.select([
     {:field, "order_items.product_id", "product_id"},
     {:field, "order_items.quantity", "quantity"}
@@ -684,9 +684,9 @@ pivot_post_only_query =
   |> Selecto.limit(5)
 
 for {label, query} <- [
-      {"pre-pivot filter only", pivot_pre_filter_query},
-      {"pre + post pivot filters", pivot_pre_and_post_filter_query},
-      {"post-pivot only (preserve_filters: false)", pivot_post_only_query}
+      {"pre-retarget filter only", retarget_pre_filter_query},
+      {"pre + post retarget filters", retarget_pre_and_post_filter_query},
+      {"post-retarget only (preserve_filters: false)", retarget_post_only_query}
     ] do
   {sql, _params} = Selecto.to_sql(query)
   sql_downcase = String.downcase(sql)
@@ -703,6 +703,6 @@ end
 
 ## Next Steps
 
-* Try adding filters before and after pivot to compare generated SQL.
+* Try adding filters before and after retarget to compare generated SQL.
 * Try replacing explicit `subselect/3` with `select_shape/2` nested containers.
 * Compare `Selecto.execute/2` with `Selecto.execute_shape/2` for the same logical query.

@@ -466,39 +466,39 @@ json_array_filter_query =
 FilteringLab.Helpers.run("JSON + array filters", json_array_filter_query)
 ```
 
-## 10) Pre- vs Post-Pivot Filters
+## 10) Pre- vs Post-Retarget Filters
 
-Compare pre-pivot and post-pivot filtering behavior and inspect the resulting SQL.
-For the current Selecto build, post-pivot filters should target the pivot root field name directly (for example `"quantity"`), so this example uses `Selecto.post_pivot_filter/2`.
+Compare pre-retarget and post-retarget filtering behavior and inspect the resulting SQL.
+For the current Selecto build, post-retarget filters should target the retarget root field name directly (for example `"quantity"`), so this example uses `Selecto.post_retarget_filter/2`.
 
 ```elixir
-pivot_pre_filter_query =
+retarget_pre_filter_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.filter({"status", "delivered"})
-  |> Selecto.pivot(:order_items, subquery_strategy: :exists)
+  |> Selecto.retarget(:order_items, subquery_strategy: :exists)
   |> Selecto.select(["order_items.product_id", "order_items.quantity", "order_items.line_total"])
   |> Selecto.limit(10)
 
-pivot_pre_and_post_filter_query =
+retarget_pre_and_post_filter_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.filter({"status", "delivered"})
-  |> Selecto.pivot(:order_items, subquery_strategy: :exists)
-  |> Selecto.post_pivot_filter({"quantity", 2})
+  |> Selecto.retarget(:order_items, subquery_strategy: :exists)
+  |> Selecto.post_retarget_filter({"quantity", 2})
   |> Selecto.select(["order_items.product_id", "order_items.quantity", "order_items.line_total"])
   |> Selecto.limit(10)
 
-pivot_post_only_query =
+retarget_post_only_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.filter({"status", "delivered"})
-  |> Selecto.pivot(:order_items, subquery_strategy: :exists, preserve_filters: false)
-  |> Selecto.post_pivot_filter({"quantity", 2})
+  |> Selecto.retarget(:order_items, subquery_strategy: :exists, preserve_filters: false)
+  |> Selecto.post_retarget_filter({"quantity", 2})
   |> Selecto.select(["order_items.product_id", "order_items.quantity", "order_items.line_total"])
   |> Selecto.limit(10)
 
 for {label, query} <- [
-      {"Pre-pivot filter only", pivot_pre_filter_query},
-      {"Pre + post pivot filters", pivot_pre_and_post_filter_query},
-      {"Post-pivot only (preserve_filters: false)", pivot_post_only_query}
+      {"Pre-retarget filter only", retarget_pre_filter_query},
+      {"Pre + post retarget filters", retarget_pre_and_post_filter_query},
+      {"Post-retarget only (preserve_filters: false)", retarget_post_only_query}
     ] do
   {sql, _params} = Selecto.to_sql(query)
   sql_downcase = String.downcase(sql)
