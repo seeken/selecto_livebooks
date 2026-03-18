@@ -23,8 +23,8 @@ defmodule SelectoLivebooks.MixProject do
     [
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.17"},
-      {:selecto, github: "seeken/selecto", override: true},
-      {:selecto_db_postgresql, github: "seeken/selecto_db_postgresql", override: true},
+      {:selecto, "0.4.0", override: true},
+      {:selecto_db_postgresql, "0.4.0", override: true},
       {:jason, "~> 1.4"},
       {:decimal, "~> 2.0"}
     ]
