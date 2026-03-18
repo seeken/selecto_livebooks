@@ -1,13 +1,11 @@
 # Selecto Guide - Interactive Examples
 
 ```elixir
-selecto_dep = {:selecto, github: "seeken/selecto", ref: "d294cfbbf661b068e932cde08331bed6b53a1594", override: true}
-selecto_db_adapter_dep = {:selecto_db_adapter, github: "seeken/selecto_db_adapter", ref: "3a0678bf2867dfe81121e0f12ab5889b946c1b1a", override: true}
-selecto_db_postgresql_dep = {:selecto_db_postgresql, github: "seeken/selecto_db_postgresql", ref: "8692208cc5972839eacb263dce7cd7a6b0a99b6d", override: true}
+selecto_dep = {:selecto, github: "seeken/selecto", ref: "28f3e70cd9b4600a1236a3b3e1aedcec81a3cc69", override: true}
+selecto_db_postgresql_dep = {:selecto_db_postgresql, github: "seeken/selecto_db_postgresql", ref: "2ea7ffb1d40769dfcd45b0a12fe7631a6c0d2edc", override: true}
 
 Mix.install([
   selecto_dep,
-  selecto_db_adapter_dep,
   selecto_db_postgresql_dep,
   {:postgrex, "~> 0.17"},
   {:ecto_sql, "~> 3.11"},
