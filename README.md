@@ -12,7 +12,7 @@ It ships a runnable example app plus focused workbooks for major feature areas.
 
 Core tours:
 - `selecto_guide_examples.livemd`
-- `selecto_selection_shapes_subselects_pivots.livemd`
+- `selecto_selection_shapes_subselects_retargets.livemd`
 - `selecto_updato_feature_tour.livemd`
 
 Focused Selecto workbooks:
@@ -31,7 +31,7 @@ Focused Selecto workbooks:
 
 ## Requirements
 
-- Elixir `~> 1.17`
+- Elixir `~> 1.18`
 - PostgreSQL `13+`
 - Livebook `0.12+`
 
@@ -49,19 +49,20 @@ Focused Selecto workbooks:
 
 ## Dependency Policy
 
-- Selecto-focused notebooks install pinned GitHub SHAs for:
+- Selecto-focused notebooks install version-pinned package releases for:
   - `selecto`
   - `selecto_db_postgresql`
-- The Updato workbook installs pinned SHAs for both `selecto` and
-  `selecto_updato`, plus the adapter packages required by the external adapter
-  model.
-- The `selecto_livebooks` Mix project tracks the same pinned Selecto and adapter
-  SHAs so workbook code and the example app stay aligned.
+- The Updato workbook installs the same version-pinned Selecto packages and a
+  pinned GitHub ref for `selecto_updato`.
+- The `selecto_livebooks` Mix project tracks the same released Selecto package
+  versions used by the notebooks so the example app stays aligned with the core
+  query examples.
 
 ## Current Notebook Parity Notes
 
 - Output-format workbook includes explicit `execute_stream/2` contract guidance
-  (`supports?(:stream)` + `stream/4`) for adapter-backed streaming paths.
+  (`supports?(:stream)` + `stream/4` + compatible connection input) for
+  adapter-backed streaming paths.
 - Updato feature tour includes tenant scope helper coverage
   (`with_tenant/2`, `apply_tenant_scope/2`, `require_tenant_filter/2|3`, and
   fail-fast scope validation).

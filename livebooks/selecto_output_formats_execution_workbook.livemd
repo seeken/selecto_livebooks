@@ -340,6 +340,7 @@ For adapter-backed paths, streaming requires an explicit contract:
 
 * adapter must return `true` for `supports?(:stream)`
 * adapter must implement `stream/4`
+* connection input must match what the adapter's `stream/4` accepts
 
 ```elixir
 stream_query =
@@ -361,9 +362,10 @@ case Selecto.execute_stream(stream_query, analyze_complexity: false) do
 end
 
 adapter_stream_probe =
-  stream_query
-  |> Map.put(:adapter, Selecto.DB.MySQL)
-  |> Map.put(:connection, :not_a_real_connection)
+  Selecto.configure(config.product_domain, repo_config, adapter: SelectoDBPostgreSQL.Adapter)
+  |> Selecto.select(["id", "name"])
+  |> Selecto.order_by({"id", :asc})
+  |> Selecto.limit(5)
 
 case Selecto.execute_stream(adapter_stream_probe, analyze_complexity: false) do
   {:error, %Selecto.Error{details: details}} ->
