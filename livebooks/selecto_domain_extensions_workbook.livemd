@@ -1,0 +1,241 @@
+# Selecto Domain Extensions Workbook
+
+## Setup 1) Install Dependencies
+
+Run this cell first. It installs the local `selecto_livebooks` project and its
+current Selecto dependencies for this Livebook session.
+
+```elixir
+Code.require_file(Path.expand("support/bootstrap.exs", __DIR__))
+SelectoLivebooksNotebookBootstrap.install!()
+```
+
+## Overview
+
+This workbook focuses on domain-level extension surfaces that sit just above
+ordinary query composition:
+
+1. View-backed domain metadata with `source_kind` and `readonly`
+2. Published view specs with `Selecto.ViewPublisher.build_sql/2`
+3. Overlay-based domain extension with `Selecto.Config.OverlayDSL`
+
+These examples are SQL-contract oriented, so they intentionally use
+`:mock_connection` when no live database execution is required.
+
+```mermaid
+flowchart LR
+  domain[domain config]
+  meta[source metadata]
+  publish[published view spec]
+  overlay[overlay merge]
+  sql[compiled SQL / DDL]
+
+  domain --> meta --> sql
+  domain --> publish --> sql
+  domain --> overlay --> sql
+```
+
+## Setup 2) Imports and Helpers
+
+```elixir
+import Selecto.ExprMacros
+import Selecto.Sigil
+
+alias Selecto.Config.Overlay
+alias Selecto.ViewPublisher
+alias SelectoLivebooks.Domains.{CustomerDomain, OrderDomain}
+
+defmodule DomainExtensionsLab.Helpers do
+  @moduledoc false
+
+  def explain(label, query), do: Selecto.Livebook.explain(label, query)
+
+  def show_published_view(label, domain, view_key) do
+    spec = domain.published_views[view_key]
+
+    case ViewPublisher.build_sql(domain, spec) do
+      {:ok, result} ->
+        IO.puts("\n=== #{label} ===")
+        IO.puts("Kind: #{inspect(result.kind)}")
+        IO.puts("Database name: #{result.database_name}")
+        IO.puts("\nDDL:\n#{result.ddl}")
+
+        if result.index_statements != [] do
+          IO.puts("\nIndex statements:")
+          Enum.each(result.index_statements, &IO.puts("  " <> &1))
+        end
+
+        {:ok, result}
+
+      {:error, errors} ->
+        IO.inspect(errors, label: "Published view errors")
+        {:error, errors}
+    end
+  end
+end
+```
+
+## 1) View-Backed Domain Metadata
+
+Use `source_kind` and `readonly` when the domain points at a database view or
+materialized view instead of a base table.
+
+```elixir
+active_customer_view_domain = %{
+  name: "Active Customers View",
+  source: %{
+    source_table: "active_customers_view",
+    primary_key: :customer_id,
+    source_kind: :view,
+    readonly: true,
+    fields: [:customer_id, :name, :tier],
+    redact_fields: [],
+    columns: %{
+      customer_id: %{type: :integer},
+      name: %{type: :string},
+      tier: %{type: :string}
+    },
+    associations: %{}
+  },
+  schemas: %{},
+  joins: %{},
+  default_selected: ["customer_id", "name", "tier"],
+  default_order_by: [{"name", :asc}]
+}
+
+customer_tier = "premium"
+
+view_query =
+  Selecto.configure(active_customer_view_domain, :mock_connection, validate: false)
+  |> Selecto.select(select([customer_id, name, tier]))
+  |> Selecto.filter(~SELECTO"tier == ^customer_tier")
+  |> Selecto.order_by(order_by([asc(name)]))
+
+IO.inspect(Map.take(active_customer_view_domain.source, [:source_kind, :readonly]), label: "View metadata")
+DomainExtensionsLab.Helpers.explain("View-backed domain query", view_query)
+```
+
+## 2) Published Views and Materialized Views
+
+`published_views` lets a domain register stable SQL publication contracts for
+generated views and materialized views.
+
+```elixir
+published_order_domain =
+  OrderDomain.domain()
+  |> Map.put(:published_views, %{
+    order_rollup: %{
+      database_name: "reporting.order_rollup",
+      kind: :view,
+      query: fn selecto ->
+        selecto
+        |> Selecto.select(select([as(id, "order_id"), as(status, "status"), as(inserted_at, "inserted_at")]))
+      end,
+      columns: %{
+        order_id: %{type: :integer},
+        status: %{type: :string},
+        inserted_at: %{type: :utc_datetime}
+      },
+      indexes: [
+        %{columns: [:order_id], unique: true},
+        %{columns: [:status]}
+      ]
+    },
+    recent_order_snapshot: %{
+      database_name: "reporting.recent_order_snapshot",
+      kind: :materialized_view,
+      query: fn selecto ->
+        selecto
+        |> Selecto.select(select([as(id, "order_id"), as(status, "status"), as(inserted_at, "inserted_at")]))
+      end,
+      columns: %{
+        order_id: %{type: :integer},
+        status: %{type: :string},
+        inserted_at: %{type: :utc_datetime}
+      },
+      indexes: [
+        %{columns: [:inserted_at], concurrently: true}
+      ]
+    }
+  })
+
+DomainExtensionsLab.Helpers.show_published_view(
+  "Published SQL view",
+  published_order_domain,
+  :order_rollup
+)
+
+DomainExtensionsLab.Helpers.show_published_view(
+  "Published materialized view",
+  published_order_domain,
+  :recent_order_snapshot
+)
+
+IO.puts("\nRefresh SQL:")
+IO.puts(ViewPublisher.refresh_sql("reporting.recent_order_snapshot", concurrently: true))
+```
+
+## 3) Extend a Base Domain with Overlay DSL
+
+Use overlays when you want to keep the base domain stable but layer in extra
+schemas, associations, joins, filters, or columns.
+
+```elixir
+defmodule DomainExtensionsLab.CustomerOrdersOverlay do
+  use Selecto.Config.OverlayDSL
+
+  defschema(:orders, %{
+    source_table: "orders",
+    primary_key: :id,
+    fields: [:id, :order_number, :status, :total, :customer_id, :inserted_at],
+    redact_fields: [],
+    columns: %{
+      id: %{type: :integer},
+      order_number: %{type: :string},
+      status: %{type: :string},
+      total: %{type: :decimal},
+      customer_id: %{type: :integer},
+      inserted_at: %{type: :utc_datetime}
+    },
+    associations: %{}
+  })
+
+  defsource_assoc(:orders, %{
+    queryable: :orders,
+    field: :orders,
+    owner_key: :id,
+    related_key: :customer_id
+  })
+
+  defjoin(:orders, %{
+    name: "Orders",
+    type: :left,
+    source: "orders",
+    on: [%{left: "id", right: "customer_id"}],
+    fields: %{
+      order_number: %{type: :string},
+      status: %{type: :string},
+      total: %{type: :decimal}
+    }
+  })
+end
+
+overlay_customer_domain =
+  CustomerDomain.domain()
+  |> Overlay.merge(DomainExtensionsLab.CustomerOrdersOverlay.overlay())
+
+overlay_query =
+  Selecto.configure(overlay_customer_domain, :mock_connection, validate: false)
+  |> Selecto.select(select([name, tier, orders.order_number, orders.status, orders.total]))
+  |> Selecto.order_by(order_by([asc(name), desc(orders.total)]))
+  |> Selecto.limit(10)
+
+IO.inspect(Map.keys(overlay_customer_domain.joins), label: "Merged joins")
+DomainExtensionsLab.Helpers.explain("Overlay-extended customer domain", overlay_query)
+```
+
+## Next Steps
+
+1. Replace a generated base domain with one produced by `mix selecto.gen.domain --view`
+2. Add overlay-defined filters or columns next to the join extension
+3. Pair a published view with a downstream view-backed domain example

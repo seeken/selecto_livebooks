@@ -16,6 +16,7 @@ Core tours:
 - `selecto_updato_feature_tour.livemd`
 
 Focused Selecto workbooks:
+- `selecto_domain_extensions_workbook.livemd`
 - `selecto_filtering_system_workbook.livemd`
 - `selecto_group_by_aggregates_workbook.livemd`
 - `selecto_ctes_workbook.livemd`
@@ -49,17 +50,23 @@ Focused Selecto workbooks:
 
 ## Dependency Policy
 
-- Selecto-focused notebooks install version-pinned package releases for:
-  - `selecto`
-  - `selecto_db_postgresql`
-- The Updato workbook installs the same version-pinned Selecto packages and a
-  pinned GitHub ref for `selecto_updato`.
-- The `selecto_livebooks` Mix project tracks the same released Selecto package
-  versions used by the notebooks so the example app stays aligned with the core
-  query examples.
+- Workbooks bootstrap through the local `selecto_livebooks` project using
+  `livebooks/support/bootstrap.exs`.
+- The project prefers sibling path deps for `selecto` and
+  `selecto_db_postgresql` when the full Selecto workspace is present.
+- Outside the mono-workspace, the project falls back to released package
+  versions, so notebooks still run when `selecto_livebooks` is cloned alone.
+- Shared runtime setup for repo config, domain loading, and SQL health checks now
+  lives in `SelectoLivebooks.NotebookSupport`.
 
 ## Current Notebook Parity Notes
 
+- Core notebook modernization is in progress. The first refresh pass moves the
+  guide, filtering, and aggregates workbooks onto shared setup helpers and adds
+  current `Selecto.ExprMacros` / `~SELECTO` examples.
+- Added `selecto_domain_extensions_workbook.livemd` for view-backed domains,
+  published views, and overlay DSL examples that were previously missing from
+  the livebook set.
 - Output-format workbook includes explicit `execute_stream/2` contract guidance
   (`supports?(:stream)` + `stream/4` + compatible connection input) for
   adapter-backed streaming paths.

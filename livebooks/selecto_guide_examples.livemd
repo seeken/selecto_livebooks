@@ -1,24 +1,16 @@
 # Selecto Guide - Interactive Examples
 
 ```elixir
-selecto_dep = {:selecto, "0.4.0", override: true}
-selecto_db_postgresql_dep = {:selecto_db_postgresql, "0.4.0", override: true}
-
-Mix.install([
-  selecto_dep,
-  selecto_db_postgresql_dep,
-  {:postgrex, "~> 0.17"},
-  {:ecto_sql, "~> 3.11"},
-  {:jason, "~> 1.4"},
-  {:kino, "~> 0.12"}
-])
-
-IO.puts("Using Selecto dependency: #{inspect(selecto_dep)}")
+Code.require_file(Path.expand("support/bootstrap.exs", __DIR__))
+SelectoLivebooksNotebookBootstrap.install!()
 ```
 
 ## Introduction
 
-This Livebook demonstrates all the examples from the **Selecto Guide**. Selecto is a powerful, composable SQL query builder for Elixir that generates parameterized queries from declarative domain configurations.
+This Livebook demonstrates the examples from the **Selecto Guide** using the
+shared `selecto_livebooks` sample app and current Selecto query-authoring
+surfaces. Selecto is a composable SQL query builder for Elixir that generates
+parameterized queries from declarative domain configurations.
 
 Before running these examples, make sure you have:
 
@@ -52,350 +44,28 @@ flowchart LR
   g3 --> g4["Sections 32-40 Domain Strategy and Introspection"]
 ```
 
-## Setup: Database Connection and Domain Configurations
+## Setup: Shared Repo and Domain Configurations
 
-Run this cell first - it sets up everything needed for the examples below.
+Run this cell first. It starts the shared sample-app repo and loads the
+maintained domain modules from `selecto_livebooks`.
 
 ```elixir
-# Configure and start the Repo
-defmodule SelectoLivebooks.Repo do
-  use Ecto.Repo,
-    otp_app: :selecto_livebooks,
-    adapter: Ecto.Adapters.Postgres
-end
-
-# Start the repo with connection settings
-{:ok, _pid} = SelectoLivebooks.Repo.start_link(
-  database: "selecto_livebooks_dev",
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  pool_size: 5
-)
-
-# Product Domain
-product_domain = %{
-  name: "Products",
-  source: %{
-    source_table: "products",
-    primary_key: :id,
-    fields: [:id, :name, :sku, :description, :price, :cost, :stock_quantity,
-             :reorder_level, :active, :featured, :tags, :metadata, :category_id, :supplier_id,
-             :inserted_at, :updated_at],
-    columns: %{
-      id: %{type: :integer},
-      name: %{type: :string, label: "Product Name"},
-      sku: %{type: :string, label: "SKU"},
-      description: %{type: :text},
-      price: %{type: :decimal, label: "Price"},
-      cost: %{type: :decimal, label: "Cost"},
-      stock_quantity: %{type: :integer, label: "Stock"},
-      reorder_level: %{type: :integer},
-      active: %{type: :boolean, label: "Active?"},
-      featured: %{type: :boolean, label: "Featured?"},
-      tags: %{type: {:array, :string}},
-      metadata: %{type: :jsonb, label: "Metadata"},
-      category_id: %{type: :integer},
-      supplier_id: %{type: :integer},
-      inserted_at: %{type: :utc_datetime},
-      updated_at: %{type: :utc_datetime}
-    },
-    associations: %{
-      category: %{field: :category, queryable: :categories, owner_key: :category_id, related_key: :id},
-      supplier: %{field: :supplier, queryable: :suppliers, owner_key: :supplier_id, related_key: :id}
-    }
-  },
-  schemas: %{
-    categories: %{
-      source_table: "categories",
-      primary_key: :id,
-      fields: [:id, :name, :description, :slug, :active],
-      redact_fields: [],
-      columns: %{
-        id: %{type: :integer},
-        name: %{type: :string},
-        description: %{type: :text},
-        slug: %{type: :string},
-        active: %{type: :boolean}
-      }
-    },
-    suppliers: %{
-      source_table: "suppliers",
-      primary_key: :id,
-      fields: [:id, :company_name, :contact_name, :email, :city, :country, :active],
-      redact_fields: [],
-      columns: %{
-        id: %{type: :integer},
-        company_name: %{type: :string},
-        contact_name: %{type: :string},
-        email: %{type: :string},
-        city: %{type: :string},
-        country: %{type: :string},
-        active: %{type: :boolean}
-      }
-    }
-  },
-  joins: %{
-    category: %{
-      name: "Category",
-      type: :left,
-      source: "categories",
-      on: [%{left: "category_id", right: "id"}],
-      fields: %{
-        name: %{type: :string, label: "Category Name"},
-        description: %{type: :text}
-      }
-    },
-    supplier: %{
-      name: "Supplier",
-      type: :left,
-      source: "suppliers",
-      on: [%{left: "supplier_id", right: "id"}],
-      fields: %{
-        company_name: %{type: :string, label: "Supplier Name"},
-        contact_name: %{type: :string}
-      }
-    }
-  }
-}
-
-# Order Domain
-order_domain = %{
-  name: "Orders",
-  source: %{
-    source_table: "orders",
-    primary_key: :id,
-    fields: [:id, :order_number, :status, :subtotal, :tax, :shipping, :discount,
-             :total, :shipping_city, :shipping_country, :customer_id,
-             :shipped_at, :delivered_at, :inserted_at, :updated_at],
-    columns: %{
-      id: %{type: :integer},
-      order_number: %{type: :string, label: "Order #"},
-      status: %{type: :string, label: "Status"},
-      subtotal: %{type: :decimal},
-      tax: %{type: :decimal},
-      shipping: %{type: :decimal},
-      discount: %{type: :decimal},
-      total: %{type: :decimal, label: "Total"},
-      shipping_city: %{type: :string},
-      shipping_country: %{type: :string},
-      customer_id: %{type: :integer},
-      shipped_at: %{type: :utc_datetime},
-      delivered_at: %{type: :utc_datetime},
-      inserted_at: %{type: :utc_datetime, label: "Order Date"},
-      updated_at: %{type: :utc_datetime}
-    },
-    associations: %{
-      customer: %{field: :customer, queryable: :customers, owner_key: :customer_id, related_key: :id},
-      order_items: %{field: :order_items, queryable: :order_items, owner_key: :id, related_key: :order_id}
-    }
-  },
-  schemas: %{
-    customers: %{
-      source_table: "customers",
-      primary_key: :id,
-      fields: [:id, :name, :email, :phone, :tier, :city, :country, :active],
-      redact_fields: [],
-      columns: %{
-        id: %{type: :integer},
-        name: %{type: :string},
-        email: %{type: :string},
-        phone: %{type: :string},
-        tier: %{type: :string},
-        city: %{type: :string},
-        country: %{type: :string},
-        active: %{type: :boolean}
-      }
-    },
-    order_items: %{
-      source_table: "order_items",
-      primary_key: :id,
-      fields: [:id, :quantity, :unit_price, :discount, :line_total, :order_id, :product_id],
-      redact_fields: [],
-      columns: %{
-        id: %{type: :integer},
-        quantity: %{type: :integer},
-        unit_price: %{type: :decimal},
-        discount: %{type: :decimal},
-        line_total: %{type: :decimal},
-        order_id: %{type: :integer},
-        product_id: %{type: :integer}
-      }
-    }
-  },
-  joins: %{
-    customer: %{
-      name: "Customer",
-      type: :left,
-      source: "customers",
-      on: [%{left: "customer_id", right: "id"}],
-      fields: %{
-        name: %{type: :string, label: "Customer Name"},
-        email: %{type: :string},
-        tier: %{type: :string, label: "Customer Tier"}
-      }
-    },
-    order_items: %{
-      name: "Order Items",
-      type: :left,
-      source: "order_items",
-      on: [%{left: "id", right: "order_id"}],
-      fields: %{
-        quantity: %{type: :integer},
-        unit_price: %{type: :decimal},
-        line_total: %{type: :decimal}
-      }
-    }
-  }
-}
-
-# Customer Domain
-customer_domain = %{
-  name: "Customers",
-  source: %{
-    source_table: "customers",
-    primary_key: :id,
-    fields: [:id, :name, :email, :phone, :tier, :company_name, :city, :country,
-             :active, :verified_at, :inserted_at, :updated_at],
-    columns: %{
-      id: %{type: :integer},
-      name: %{type: :string, label: "Customer Name"},
-      email: %{type: :string},
-      phone: %{type: :string},
-      tier: %{type: :string, label: "Tier"},
-      company_name: %{type: :string},
-      city: %{type: :string},
-      country: %{type: :string},
-      active: %{type: :boolean},
-      verified_at: %{type: :utc_datetime},
-      inserted_at: %{type: :utc_datetime},
-      updated_at: %{type: :utc_datetime}
-    }
-  },
-  schemas: %{},
-  joins: %{}
-}
-
-# Employee Domain (for hierarchical examples)
-employee_domain = %{
-  name: "Employees",
-  source: %{
-    source_table: "employees",
-    primary_key: :id,
-    fields: [:id, :first_name, :last_name, :email, :title, :department,
-             :hire_date, :salary, :active, :manager_id, :inserted_at, :updated_at],
-    columns: %{
-      id: %{type: :integer},
-      first_name: %{type: :string},
-      last_name: %{type: :string},
-      email: %{type: :string},
-      title: %{type: :string},
-      department: %{type: :string},
-      hire_date: %{type: :date},
-      salary: %{type: :decimal},
-      active: %{type: :boolean},
-      manager_id: %{type: :integer},
-      inserted_at: %{type: :utc_datetime},
-      updated_at: %{type: :utc_datetime}
-    },
-    associations: %{
-      manager: %{field: :manager, queryable: :employees, owner_key: :manager_id, related_key: :id}
-    }
-  },
-  schemas: %{
-    employees: %{
-      source_table: "employees",
-      primary_key: :id,
-      fields: [:id, :first_name, :last_name, :email, :title, :department,
-               :hire_date, :salary, :active, :manager_id],
-      redact_fields: [],
-      columns: %{
-        id: %{type: :integer},
-        first_name: %{type: :string},
-        last_name: %{type: :string},
-        email: %{type: :string},
-        title: %{type: :string},
-        department: %{type: :string},
-        hire_date: %{type: :date},
-        salary: %{type: :decimal},
-        active: %{type: :boolean},
-        manager_id: %{type: :integer}
-      }
-    }
-  },
-  joins: %{
-    manager: %{
-      name: "Manager",
-      type: :left,
-      source: "employees",
-      on: [%{left: "manager_id", right: "id"}],
-      fields: %{
-        first_name: %{type: :string, label: "Manager First Name"},
-        last_name: %{type: :string, label: "Manager Last Name"}
-      }
-    }
-  }
-}
-
-# Order Items Domain (for product sales analysis)
-order_items_domain = %{
-  name: "OrderItems",
-  source: %{
-    source_table: "order_items",
-    primary_key: :id,
-    fields: [:id, :quantity, :unit_price, :line_total, :order_id, :product_id],
-    columns: %{
-      id: %{type: :integer},
-      quantity: %{type: :integer},
-      unit_price: %{type: :decimal},
-      line_total: %{type: :decimal},
-      order_id: %{type: :integer},
-      product_id: %{type: :integer}
-    },
-    associations: %{
-      product: %{field: :product, queryable: :products, owner_key: :product_id, related_key: :id}
-    }
-  },
-  schemas: %{
-    products: %{
-      source_table: "products",
-      primary_key: :id,
-      fields: [:id, :name, :sku, :price],
-      redact_fields: [],
-      columns: %{
-        id: %{type: :integer},
-        name: %{type: :string},
-        sku: %{type: :string},
-        price: %{type: :decimal}
-      }
-    }
-  },
-  joins: %{
-    product: %{
-      name: "Product",
-      type: :left,
-      source: "products",
-      on: [%{left: "product_id", right: "id"}],
-      fields: %{
-        name: %{type: :string},
-        sku: %{type: :string}
-      }
-    }
-  }
-}
-
-# Store everything in a map for easy access
-config = %{
-  repo: SelectoLivebooks.Repo,
-  product_domain: product_domain,
-  order_domain: order_domain,
-  customer_domain: customer_domain,
-  employee_domain: employee_domain,
-  order_items_domain: order_items_domain
-}
+config = SelectoLivebooks.NotebookSupport.config()
+counts =
+  SelectoLivebooks.NotebookSupport.table_counts([
+    "products",
+    "orders",
+    "order_items",
+    "customers",
+    "employees"
+  ])
 
 IO.puts("✓ Connected to database!")
-IO.puts("✓ All domains configured!")
+IO.puts("✓ Shared domain modules loaded!")
+IO.puts(
+  "Dataset counts: " <>
+    Enum.map_join(counts, ", ", fn {table, count} -> "#{table}=#{count}" end)
+)
 IO.puts("\nAvailable: config.repo, config.product_domain, config.order_domain, etc.")
 
 config
@@ -409,39 +79,25 @@ Run this helper cell once. It wraps query execution with lightweight assertions 
 defmodule SelectoLivebooks.LivebookHelpers do
   @moduledoc false
 
-  def execute_with_checks(query, opts \\ []) do
-    label = Keyword.get(opts, :example, "Query")
-    {sql, params} = Selecto.to_sql(query)
-
-    IO.puts("\n[Checks] #{label}")
-    print_check("SQL generated", String.trim(sql) != "")
-    print_check("FROM clause present", valid_from_clause?(sql))
-    print_check("params available", is_list(params))
-    print_check("CTE appears consumed (if present)", cte_consumed?(sql))
-
-    Selecto.execute(query)
-  end
-
-  defp valid_from_clause?(sql) do
-    has_from = Regex.match?(~r/\bfrom\s+\S/m, sql)
-    bad_from = Regex.match?(~r/\bfrom\s*(\n|\r\n)\s*where\b/mi, sql)
-    has_from and not bad_from
-  end
-
-  defp cte_consumed?(sql) do
-    case Regex.run(~r/\bWITH(?:\s+RECURSIVE)?\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+AS\b/m, sql) do
-      nil ->
-        true
-
-      [_, cte_name] ->
-        count = Regex.scan(~r/\b#{Regex.escape(cte_name)}\b/, sql) |> length()
-        count > 1
-    end
-  end
-
-  defp print_check(name, true), do: IO.puts("  [PASS] #{name}")
-  defp print_check(name, false), do: IO.puts("  [FAIL] #{name}")
+  def execute_with_checks(query, opts \\ []),
+    do: SelectoLivebooks.NotebookSupport.execute_with_checks(query, opts)
 end
+```
+
+## Setup: Current Expression DSL Imports
+
+The first sections now use the shipped expression DSL (`Selecto.ExprMacros`,
+`Selecto.Expr`, and `~SELECTO`) where it improves readability. Later advanced
+sections still keep tuple forms when they are the clearest way to expose raw
+Selecto query shapes.
+
+```elixir
+import Selecto.ExprMacros
+import Selecto.Sigil
+
+alias Selecto.Expr, as: X
+
+:ok
 ```
 
 ### Visual Map: Query Lifecycle in Most Sections
@@ -462,11 +118,13 @@ This section focuses on Basic Query Building. Run the examples in order and comp
 ### Selecting Fields
 
 ```elixir
+import Selecto.ExprMacros
+
 # Simple field selection
 selecto = Selecto.configure(config.product_domain, config.repo)
 
 result = selecto
-|> Selecto.select(["name", "sku", "price", "stock_quantity"])
+|> Selecto.select(select([name, sku, price, stock_quantity]))
 |> Selecto.limit(10)
 |> SelectoLivebooks.LivebookHelpers.execute_with_checks()
 
@@ -485,10 +143,12 @@ end
 ### Select with Joins (dot notation)
 
 ```elixir
+import Selecto.ExprMacros
+
 selecto = Selecto.configure(config.product_domain, config.repo)
 
 result = selecto
-|> Selecto.select(["name", "price", "category.name", "supplier.company_name"])
+|> Selecto.select(select([name, price, category.name, supplier.company_name]))
 |> Selecto.limit(10)
 |> SelectoLivebooks.LivebookHelpers.execute_with_checks()
 
@@ -511,11 +171,13 @@ This section focuses on Filtering Data. Run the examples in order and compare th
 ### Simple Equality Filter
 
 ```elixir
+import Selecto.ExprMacros
+
 selecto = Selecto.configure(config.product_domain, config.repo)
 
 result = selecto
-|> Selecto.select(["name", "price", "active"])
-|> Selecto.filter({"active", true})
+|> Selecto.select(select([name, price, active]))
+|> Selecto.filter(where(active == true))
 |> Selecto.limit(10)
 |> SelectoLivebooks.LivebookHelpers.execute_with_checks()
 
@@ -530,13 +192,14 @@ end
 ### Comparison Operators
 
 ```elixir
+import Selecto.ExprMacros
+
 selecto = Selecto.configure(config.product_domain, config.repo)
 
 result = selecto
-|> Selecto.select(["name", "price", "stock_quantity"])
-|> Selecto.filter({"price", {:gt, 50}})      # price > 50
-|> Selecto.filter({"stock_quantity", {:gte, 100}})  # stock >= 100
-|> Selecto.order_by({"price", :desc})
+|> Selecto.select(select([name, price, stock_quantity]))
+|> Selecto.filter(where(price > 50 and stock_quantity >= 100))
+|> Selecto.order_by(order_by([desc(price)]))
 |> Selecto.limit(10)
 |> SelectoLivebooks.LivebookHelpers.execute_with_checks()
 
@@ -551,11 +214,16 @@ end
 ### Pattern Matching with LIKE/ILIKE
 
 ```elixir
+import Selecto.ExprMacros
+import Selecto.Sigil
+
+pattern = "%wireless%"
+
 selecto = Selecto.configure(config.product_domain, config.repo)
 
 result = selecto
-|> Selecto.select(["name", "sku", "price"])
-|> Selecto.filter({"name", {:ilike, "%wireless%"}})  # Case-insensitive
+|> Selecto.select(select([name, sku, price]))
+|> Selecto.filter(~SELECTO"ilike(name, ^pattern)")
 |> SelectoLivebooks.LivebookHelpers.execute_with_checks()
 
 case result do
@@ -703,16 +371,20 @@ This section focuses on Aggregates and Grouping. Run the examples in order and c
 ### Simple Aggregates
 
 ```elixir
+import Selecto.ExprMacros
+
 selecto = Selecto.configure(config.product_domain, config.repo)
 
 result = selecto
-|> Selecto.select([
-  {:count, "*"},
-  {:avg, "price"},
-  {:min, "price"},
-  {:max, "price"},
-  {:sum, "stock_quantity"}
-])
+|> Selecto.select(
+  select([
+    as(count(), "product_count"),
+    as(avg(price), "avg_price"),
+    as(min(price), "min_price"),
+    as(max(price), "max_price"),
+    as(sum(stock_quantity), "stock_total")
+  ])
+)
 |> SelectoLivebooks.LivebookHelpers.execute_with_checks()
 
 case result do
@@ -730,16 +402,20 @@ end
 ### Group By with Aggregates
 
 ```elixir
+import Selecto.ExprMacros
+
 selecto = Selecto.configure(config.product_domain, config.repo)
 
 result = selecto
-|> Selecto.select([
-  "category.name",
-  {:count, "*"},
-  {:avg, "price"},
-  {:sum, "stock_quantity"}
-])
-|> Selecto.group_by(["category.name"])
+|> Selecto.select(
+  select([
+    category.name,
+    as(count(), "product_count"),
+    as(avg(price), "avg_price"),
+    as(sum(stock_quantity), "stock_total")
+  ])
+)
+|> Selecto.group_by(group_by([category.name]))
 |> Selecto.order_by({{:count, "*"}, :desc})
 |> SelectoLivebooks.LivebookHelpers.execute_with_checks()
 
@@ -815,16 +491,20 @@ end
 ### Orders by Customer Tier
 
 ```elixir
+import Selecto.ExprMacros
+
 selecto = Selecto.configure(config.order_domain, config.repo)
 
 result = selecto
-|> Selecto.select([
-  "customer.tier",
-  {:count, "*"},
-  {:sum, "total"},
-  {:avg, "total"}
-])
-|> Selecto.group_by(["customer.tier"])
+|> Selecto.select(
+  select([
+    customer.tier,
+    as(count(), "order_count"),
+    as(sum(total), "gross_total"),
+    as(avg(total), "avg_total")
+  ])
+)
+|> Selecto.group_by(group_by([customer.tier]))
 |> Selecto.order_by({{:sum, "total"}, :desc})
 |> SelectoLivebooks.LivebookHelpers.execute_with_checks()
 

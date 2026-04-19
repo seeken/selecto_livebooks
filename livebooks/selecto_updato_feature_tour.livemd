@@ -1,22 +1,11 @@
 # SelectoUpdato Complete Feature Tour
 
 ```elixir
-selecto_dep = {:selecto, "0.4.0", override: true}
-selecto_db_postgresql_dep = {:selecto_db_postgresql, "0.4.0", override: true}
-updato_dep = {:selecto_updato, github: "seeken/selecto_updato", ref: "24152ae452e629bf661db6e77e1b50fac1f3e459"}
+Code.require_file(Path.expand("support/bootstrap.exs", __DIR__))
 
-Mix.install([
-  selecto_dep,
-  selecto_db_postgresql_dep,
-  updato_dep,
-  {:postgrex, "~> 0.17"},
-  {:ecto_sql, "~> 3.11"},
-  {:jason, "~> 1.4"},
-  {:decimal, "~> 2.0"},
-  {:kino, "~> 0.12"}
-])
+updato_dep = SelectoLivebooksNotebookBootstrap.updato_dep()
+SelectoLivebooksNotebookBootstrap.install!([updato_dep])
 
-IO.puts("Using Selecto dependency: #{inspect(selecto_dep)}")
 IO.puts("Using SelectoUpdato dependency: #{inspect(updato_dep)}")
 ```
 

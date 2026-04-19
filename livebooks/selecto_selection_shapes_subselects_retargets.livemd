@@ -2,22 +2,12 @@
 
 ## Setup 1) Install Dependencies
 
-Run this cell first. It installs Selecto and supporting libraries from GitHub for this Livebook session.
+Run this cell first. It installs the local `selecto_livebooks` project and its
+current Selecto dependencies for this Livebook session.
 
 ```elixir
-selecto_dep = {:selecto, "0.4.0", override: true}
-selecto_db_postgresql_dep = {:selecto_db_postgresql, "0.4.0", override: true}
-
-Mix.install([
-  selecto_dep,
-  selecto_db_postgresql_dep,
-  {:postgrex, "~> 0.17"},
-  {:ecto_sql, "~> 3.11"},
-  {:jason, "~> 1.4"},
-  {:kino, "~> 0.12"}
-])
-
-IO.puts("Using Selecto dependency: #{inspect(selecto_dep)}")
+Code.require_file(Path.expand("support/bootstrap.exs", __DIR__))
+SelectoLivebooksNotebookBootstrap.install!()
 ```
 
 ## Overview
@@ -67,173 +57,15 @@ Run this command in a terminal (outside Livebook) once per local environment:
 mix setup
 ```
 
-## Setup 2) Connect to Repo and Build Domain Config
+## Setup 2) Connect to Shared Repo and Load Domain Config
 
-This cell defines a local Repo module and an in-notebook `OrderDomain` config, then connects to PostgreSQL and verifies the `orders` table count.
+This cell starts the shared sample-app repo and loads the maintained order
+domain from `selecto_livebooks`.
 
 ```elixir
-defmodule SelectionFocus.Repo do
-  use Ecto.Repo,
-    otp_app: :selection_focus_livebook,
-    adapter: Ecto.Adapters.Postgres
-end
+config = SelectoLivebooks.NotebookSupport.config([:order_domain])
+order_count = SelectoLivebooks.NotebookSupport.table_counts(["orders"])["orders"]
 
-defmodule SelectionFocus.OrderDomain do
-  @moduledoc false
-
-  def domain do
-    %{
-      name: "Orders",
-      source: %{
-        source_table: "orders",
-        primary_key: :id,
-        fields: [
-          :id,
-          :order_number,
-          :status,
-          :subtotal,
-          :tax,
-          :shipping,
-          :discount,
-          :total,
-          :shipping_address,
-          :shipping_city,
-          :shipping_region,
-          :shipping_postal_code,
-          :shipping_country,
-          :notes,
-          :shipped_at,
-          :delivered_at,
-          :customer_id,
-          :inserted_at,
-          :updated_at
-        ],
-        columns: %{
-          id: %{type: :integer},
-          order_number: %{type: :string, label: "Order #"},
-          status: %{type: :string, label: "Status"},
-          subtotal: %{type: :decimal, label: "Subtotal", format: :currency},
-          tax: %{type: :decimal, label: "Tax", format: :currency},
-          shipping: %{type: :decimal, label: "Shipping", format: :currency},
-          discount: %{type: :decimal, label: "Discount", format: :currency},
-          total: %{type: :decimal, label: "Total", format: :currency},
-          shipping_address: %{type: :string, label: "Ship To Address"},
-          shipping_city: %{type: :string, label: "Ship To City"},
-          shipping_region: %{type: :string, label: "Ship To Region"},
-          shipping_postal_code: %{type: :string, label: "Ship To Postal Code"},
-          shipping_country: %{type: :string, label: "Ship To Country"},
-          notes: %{type: :text},
-          shipped_at: %{type: :utc_datetime, label: "Shipped Date"},
-          delivered_at: %{type: :utc_datetime, label: "Delivered Date"},
-          customer_id: %{type: :integer},
-          inserted_at: %{type: :utc_datetime, label: "Order Date"},
-          updated_at: %{type: :utc_datetime}
-        },
-        associations: %{
-          customer: %{field: :customer, queryable: :customers, owner_key: :customer_id, related_key: :id},
-          order_items: %{field: :order_items, queryable: :order_items, owner_key: :id, related_key: :order_id}
-        }
-      },
-      schemas: %{
-        customers: %{
-          source_table: "customers",
-          primary_key: :id,
-          fields: [:id, :name, :email, :phone, :tier, :company_name, :city, :country, :active],
-          redact_fields: [],
-          columns: %{
-            id: %{type: :integer},
-            name: %{type: :string, label: "Customer Name"},
-            email: %{type: :string},
-            phone: %{type: :string},
-            tier: %{type: :string, label: "Customer Tier"},
-            company_name: %{type: :string},
-            city: %{type: :string},
-            country: %{type: :string},
-            active: %{type: :boolean}
-          }
-        },
-        order_items: %{
-          source_table: "order_items",
-          primary_key: :id,
-          fields: [:id, :quantity, :unit_price, :discount, :line_total, :line_number, :order_id, :product_id],
-          redact_fields: [],
-          columns: %{
-            id: %{type: :integer},
-            quantity: %{type: :integer},
-            unit_price: %{type: :decimal},
-            discount: %{type: :decimal},
-            line_total: %{type: :decimal},
-            line_number: %{type: :integer},
-            order_id: %{type: :integer},
-            product_id: %{type: :integer}
-          }
-        },
-        products: %{
-          source_table: "products",
-          primary_key: :id,
-          fields: [:id, :name, :sku, :price, :category_id],
-          redact_fields: [],
-          columns: %{
-            id: %{type: :integer},
-            name: %{type: :string},
-            sku: %{type: :string},
-            price: %{type: :decimal},
-            category_id: %{type: :integer}
-          }
-        }
-      },
-      joins: %{
-        customer: %{
-          name: "Customer",
-          type: :left,
-          source: "customers",
-          on: [%{left: "customer_id", right: "id"}],
-          fields: %{
-            name: %{type: :string, label: "Customer Name"},
-            email: %{type: :string, label: "Customer Email"},
-            tier: %{type: :string, label: "Customer Tier"},
-            country: %{type: :string, label: "Customer Country"}
-          }
-        },
-        order_items: %{
-          name: "Order Items",
-          type: :left,
-          source: "order_items",
-          on: [%{left: "id", right: "order_id"}],
-          fields: %{
-            quantity: %{type: :integer},
-            unit_price: %{type: :decimal},
-            line_total: %{type: :decimal}
-          }
-        }
-      },
-      default_selected: ["order_number", "status", "total", "customer.name", "inserted_at"],
-      default_order_by: [{"inserted_at", :desc}]
-    }
-  end
-end
-
-repo_config = [
-  database: System.get_env("SELECTO_LIVEBOOKS_DB", "selecto_livebooks_dev"),
-  username: System.get_env("SELECTO_LIVEBOOKS_DB_USER", "postgres"),
-  password: System.get_env("SELECTO_LIVEBOOKS_DB_PASS", "postgres"),
-  hostname: System.get_env("SELECTO_LIVEBOOKS_DB_HOST", "localhost"),
-  port: String.to_integer(System.get_env("SELECTO_LIVEBOOKS_DB_PORT", "5432")),
-  pool_size: 5
-]
-
-case Process.whereis(SelectionFocus.Repo) do
-  nil -> {:ok, _pid} = SelectionFocus.Repo.start_link(repo_config)
-  _pid -> :ok
-end
-
-config = %{
-  repo: SelectionFocus.Repo,
-  order_domain: SelectionFocus.OrderDomain.domain()
-}
-
-{:ok, result} = Ecto.Adapters.SQL.query(config.repo, "select count(*) from orders", [])
-[[order_count]] = result.rows
 IO.puts("Connected. Orders in dataset: #{order_count}")
 
 config
@@ -247,33 +79,27 @@ This helper cell adds utility functions that print generated SQL/params and exec
 defmodule SelectionFocus.Helpers do
   @moduledoc false
 
-  def explain(label, query) do
-    {sql, params} = Selecto.to_sql(query)
-
-    IO.puts("\n=== #{label} ===")
-    IO.puts(String.trim(sql))
-    IO.puts("Params: #{inspect(params)}")
-
-    {sql, params}
-  end
+  def explain(label, query), do: Selecto.Livebook.explain(label, query)
 
   def run(label, query, opts \\ []) do
-    explain(label, query)
-
-    case Selecto.execute(query, opts) do
-      {:ok, {rows, columns, aliases}} = ok ->
-        IO.puts("Rows: #{length(rows)}")
-        IO.puts("Columns: #{inspect(columns)}")
-        IO.puts("Aliases: #{inspect(aliases)}")
-        IO.inspect(Enum.take(rows, 5), label: "Preview (up to 5 rows)")
-        ok
-
-      {:error, error} = failure ->
-        IO.puts("Error: #{inspect(error)}")
-        failure
-    end
+    Selecto.Livebook.run(label, query, Keyword.put_new(opts, :preview_count, 5))
   end
 end
+```
+
+## Setup 4) Current Expression DSL Imports
+
+This notebook keeps shape/subselect containers in their existing explicit form,
+but now uses the shipped expression DSL where it improves ordinary filter,
+selection, and retarget readability.
+
+```elixir
+import Selecto.ExprMacros
+import Selecto.Sigil
+
+alias Selecto.Expr, as: X
+
+:ok
 ```
 
 ## 1) Selection Basics
@@ -373,6 +199,8 @@ flowchart TD
 This cell builds a shape query, prints the compiled shape plan, and executes it with `execute_shape/2`.
 
 ```elixir
+import Selecto.ExprMacros
+
 shape_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.select_shape([
@@ -381,8 +209,8 @@ shape_query =
     "customer.name",
     ["order_items.quantity", "order_items.line_total"]
   ])
-  |> Selecto.filter({"status", {:in, ["processing", "shipped"]}})
-  |> Selecto.order_by({"inserted_at", :desc})
+  |> Selecto.filter(where(status == "processing" or status == "shipped"))
+  |> Selecto.order_by(order_by([desc(inserted_at)]))
   |> Selecto.limit(3)
 
 SelectionFocus.Helpers.explain("Selection shape query", shape_query)
@@ -408,14 +236,16 @@ Tuple containers over a single joined schema materialize as lists of tuples.
 This is useful when you want stronger positional semantics than list-of-lists output.
 
 ```elixir
+import Selecto.ExprMacros
+
 tuple_shape_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.select_shape([
     "order_number",
     {"order_items.quantity", "order_items.line_total"}
   ])
-  |> Selecto.filter({"status", {:in, ["processing", "shipped"]}})
-  |> Selecto.order_by({"inserted_at", :desc})
+  |> Selecto.filter(where(status == "processing" or status == "shipped"))
+  |> Selecto.order_by(order_by([desc(inserted_at)]))
   |> Selecto.limit(3)
 
 SelectionFocus.Helpers.explain("Tuple shape query", tuple_shape_query)
@@ -442,10 +272,12 @@ Use `subselect/3` when you want explicit control over embedded related data.
 This cell adds an explicit JSON aggregate subselect for `order_items` and prints per-order item counts.
 
 ```elixir
+import Selecto.ExprMacros
+
 subselect_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select(["order_number", "status", "total", "customer.name"])
-  |> Selecto.filter({"status", {:in, ["processing", "shipped"]}})
+  |> Selecto.select(select([order_number, status, total, customer.name]))
+  |> Selecto.filter(where(status == "processing" or status == "shipped"))
   |> Selecto.subselect([
     %{
       target_schema: :order_items,
@@ -454,7 +286,7 @@ subselect_query =
       alias: "line_items"
     }
   ])
-  |> Selecto.order_by({"total", :desc})
+  |> Selecto.order_by(order_by([desc(total)]))
   |> Selecto.limit(5)
 
 {:ok, {rows, _columns, _aliases}} = SelectionFocus.Helpers.run("Subselect query", subselect_query)
@@ -476,6 +308,8 @@ This cell compares the four built-in subselect aggregation formats:
 `:json_agg`, `:array_agg`, `:string_agg`, and `:count`.
 
 ```elixir
+import Selecto.ExprMacros
+
 subselect_formats = [
   {"json_agg", %{fields: ["quantity", "line_total"], target_schema: :order_items, format: :json_agg, alias: "line_items_json"}},
   {"array_agg", %{fields: ["quantity"], target_schema: :order_items, format: :array_agg, alias: "quantities_array"}},
@@ -486,10 +320,10 @@ subselect_formats = [
 Enum.each(subselect_formats, fn {label, spec} ->
   query =
     Selecto.configure(config.order_domain, config.repo)
-    |> Selecto.select(["order_number", "status"])
-    |> Selecto.filter({"status", {:in, ["processing", "shipped"]}})
+    |> Selecto.select(select([order_number, status]))
+    |> Selecto.filter(where(status == "processing" or status == "shipped"))
     |> Selecto.subselect([spec])
-    |> Selecto.order_by({"inserted_at", :desc})
+    |> Selecto.order_by(order_by([desc(inserted_at)]))
     |> Selecto.limit(2)
 
   SelectionFocus.Helpers.explain("Subselect format: #{label}", query)
@@ -512,20 +346,22 @@ end)
 This cell runs one query for each style so you can compare readability and output.
 
 ```elixir
+import Selecto.ExprMacros
+
 string_syntax_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select(["order_number", "customer.name"])
-  |> Selecto.filter({"status", {:in, ["processing", "shipped"]}})
+  |> Selecto.select(select([order_number, customer.name]))
+  |> Selecto.filter(where(status == "processing" or status == "shipped"))
   |> Selecto.subselect(["order_items.quantity"])
-  |> Selecto.order_by({"inserted_at", :desc})
+  |> Selecto.order_by(order_by([desc(inserted_at)]))
   |> Selecto.limit(3)
 
 SelectionFocus.Helpers.run("Subselect string syntax", string_syntax_query)
 
 map_syntax_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select(["order_number", "customer.name"])
-  |> Selecto.filter({"status", {:in, ["processing", "shipped"]}})
+  |> Selecto.select(select([order_number, customer.name]))
+  |> Selecto.filter(where(status == "processing" or status == "shipped"))
   |> Selecto.subselect([
     %{
       target_schema: :order_items,
@@ -540,7 +376,7 @@ map_syntax_query =
       alias: "line_totals"
     }
   ])
-  |> Selecto.order_by({"inserted_at", :desc})
+  |> Selecto.order_by(order_by([desc(inserted_at)]))
   |> Selecto.limit(3)
 
 SelectionFocus.Helpers.run("Subselect map syntax", map_syntax_query)
@@ -564,15 +400,13 @@ flowchart LR
 This first retarget cell builds a line-level query rooted at `order_items` and previews raw rows.
 
 ```elixir
+import Selecto.ExprMacros
+
 retarget_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.filter({"status", "delivered"})
+  |> Selecto.filter(where(status == "delivered"))
   |> Selecto.retarget(:order_items, subquery_strategy: :exists)
-  |> Selecto.select([
-    {:field, "order_items.product_id", "product_id"},
-    {:field, "order_items.quantity", "quantity"},
-    {:field, "order_items.line_total", "line_total"}
-  ])
+  |> Selecto.select(select([as(order_items.product_id, "product_id"), as(order_items.quantity, "quantity"), as(order_items.line_total, "line_total")]))
 
 SelectionFocus.Helpers.run("Retarget query (line-level rows)", retarget_query)
 ```
@@ -610,16 +444,14 @@ end)
 This cell compares generated SQL and row counts across supported retarget subquery strategies.
 
 ```elixir
+import Selecto.ExprMacros
+
 Enum.each([:in, :exists, :join], fn strategy ->
   query =
     Selecto.configure(config.order_domain, config.repo)
-    |> Selecto.filter({"status", "delivered"})
+    |> Selecto.filter(where(status == "delivered"))
     |> Selecto.retarget(:order_items, subquery_strategy: strategy)
-    |> Selecto.select([
-      {:field, "order_items.product_id", "product_id"},
-      {:field, "order_items.quantity", "quantity"},
-      {:field, "order_items.line_total", "line_total"}
-    ])
+    |> Selecto.select(select([as(order_items.product_id, "product_id"), as(order_items.quantity, "quantity"), as(order_items.line_total, "line_total")]))
     |> Selecto.limit(5)
 
   SelectionFocus.Helpers.explain("Retarget strategy #{strategy}", query)
@@ -649,36 +481,29 @@ This cell compares SQL and results for:
 3. post-retarget only with `preserve_filters: false`
 
 ```elixir
+import Selecto.ExprMacros
+
 retarget_pre_filter_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.filter({"status", "delivered"})
+  |> Selecto.filter(where(status == "delivered"))
   |> Selecto.retarget(:order_items, subquery_strategy: :exists)
-  |> Selecto.select([
-    {:field, "order_items.product_id", "product_id"},
-    {:field, "order_items.quantity", "quantity"}
-  ])
+  |> Selecto.select(select([as(order_items.product_id, "product_id"), as(order_items.quantity, "quantity")]))
   |> Selecto.limit(5)
 
 retarget_pre_and_post_filter_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.filter({"status", "delivered"})
+  |> Selecto.filter(where(status == "delivered"))
   |> Selecto.retarget(:order_items, subquery_strategy: :exists)
   |> Selecto.post_retarget_filter({"quantity", 2})
-  |> Selecto.select([
-    {:field, "order_items.product_id", "product_id"},
-    {:field, "order_items.quantity", "quantity"}
-  ])
+  |> Selecto.select(select([as(order_items.product_id, "product_id"), as(order_items.quantity, "quantity")]))
   |> Selecto.limit(5)
 
 retarget_post_only_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.filter({"status", "delivered"})
+  |> Selecto.filter(where(status == "delivered"))
   |> Selecto.retarget(:order_items, subquery_strategy: :exists, preserve_filters: false)
   |> Selecto.post_retarget_filter({"quantity", 2})
-  |> Selecto.select([
-    {:field, "order_items.product_id", "product_id"},
-    {:field, "order_items.quantity", "quantity"}
-  ])
+  |> Selecto.select(select([as(order_items.product_id, "product_id"), as(order_items.quantity, "quantity")]))
   |> Selecto.limit(5)
 
 for {label, query} <- [

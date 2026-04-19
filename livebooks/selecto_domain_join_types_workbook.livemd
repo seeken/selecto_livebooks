@@ -2,22 +2,12 @@
 
 ## Setup 1) Install Dependencies
 
-Run this cell first. It installs Selecto and related packages from GitHub for this Livebook session.
+Run this cell first. It installs the local `selecto_livebooks` project and its
+current Selecto dependencies for this Livebook session.
 
 ```elixir
-selecto_dep = {:selecto, "0.4.0", override: true}
-selecto_db_postgresql_dep = {:selecto_db_postgresql, "0.4.0", override: true}
-
-Mix.install([
-  selecto_dep,
-  selecto_db_postgresql_dep,
-  {:postgrex, "~> 0.17"},
-  {:ecto_sql, "~> 3.11"},
-  {:jason, "~> 1.4"},
-  {:kino, "~> 0.12"}
-])
-
-IO.puts("Using Selecto dependency: #{inspect(selecto_dep)}")
+Code.require_file(Path.expand("support/bootstrap.exs", __DIR__))
+SelectoLivebooksNotebookBootstrap.install!()
 ```
 
 ## Overview
@@ -57,149 +47,17 @@ Before running, initialize the sample database:
 mix setup
 ```
 
-## Setup 2) Connect to Repo and Build Base Domains
+## Setup 2) Connect to Shared Repo and Load Base Domains
 
-This cell defines base `order_domain` and `employee_domain` for join-type variants.
+This cell starts the shared sample-app repo and loads the maintained order and
+employee domains for join-type variants.
 
 ```elixir
-defmodule JoinTypeLab.Repo do
-  use Ecto.Repo,
-    otp_app: :join_type_lab_livebook,
-    adapter: Ecto.Adapters.Postgres
-end
+config = SelectoLivebooks.NotebookSupport.config([:order_domain, :employee_domain])
+counts = SelectoLivebooks.NotebookSupport.table_counts(["orders", "employees"])
+order_count = counts["orders"]
+employee_count = counts["employees"]
 
-defmodule JoinTypeLab.Domains do
-  @moduledoc false
-
-  def order_domain do
-    %{
-      name: "Orders",
-      source: %{
-        source_table: "orders",
-        primary_key: :id,
-        fields: [:id, :order_number, :status, :total, :customer_id, :inserted_at],
-        columns: %{
-          id: %{type: :integer},
-          order_number: %{type: :string},
-          status: %{type: :string},
-          total: %{type: :decimal},
-          customer_id: %{type: :integer},
-          inserted_at: %{type: :utc_datetime}
-        },
-        associations: %{
-          customer: %{field: :customer, queryable: :customers, owner_key: :customer_id, related_key: :id}
-        }
-      },
-      schemas: %{
-        customers: %{
-          source_table: "customers",
-          primary_key: :id,
-          fields: [:id, :name, :tier, :country, :active],
-          redact_fields: [],
-          columns: %{
-            id: %{type: :integer},
-            name: %{type: :string},
-            tier: %{type: :string},
-            country: %{type: :string},
-            active: %{type: :boolean}
-          }
-        }
-      },
-      joins: %{
-        customer: %{
-          name: "Customer",
-          type: :left,
-          source: "customers",
-          on: [%{left: "customer_id", right: "id"}],
-          fields: %{
-            name: %{type: :string},
-            tier: %{type: :string},
-            country: %{type: :string}
-          }
-        }
-      },
-      default_selected: ["order_number", "status", "total", "customer.name"],
-      default_order_by: [{"total", :desc}]
-    }
-  end
-
-  def employee_domain do
-    %{
-      name: "Employees",
-      source: %{
-        source_table: "employees",
-        primary_key: :id,
-        fields: [:id, :first_name, :last_name, :title, :department, :manager_id, :active],
-        columns: %{
-          id: %{type: :integer},
-          first_name: %{type: :string},
-          last_name: %{type: :string},
-          title: %{type: :string},
-          department: %{type: :string},
-          manager_id: %{type: :integer},
-          active: %{type: :boolean}
-        },
-        associations: %{
-          manager: %{field: :manager, queryable: :employees, owner_key: :manager_id, related_key: :id}
-        }
-      },
-      schemas: %{
-        employees: %{
-          source_table: "employees",
-          primary_key: :id,
-          fields: [:id, :first_name, :last_name, :title, :department, :manager_id, :active],
-          redact_fields: [],
-          columns: %{
-            id: %{type: :integer},
-            first_name: %{type: :string},
-            last_name: %{type: :string},
-            title: %{type: :string},
-            department: %{type: :string},
-            manager_id: %{type: :integer},
-            active: %{type: :boolean}
-          }
-        }
-      },
-      joins: %{
-        manager: %{
-          name: "Manager",
-          type: :left,
-          source: "employees",
-          on: [%{left: "manager_id", right: "id"}],
-          fields: %{
-            first_name: %{type: :string},
-            last_name: %{type: :string}
-          }
-        }
-      }
-    }
-  end
-end
-
-repo_config = [
-  database: System.get_env("SELECTO_LIVEBOOKS_DB", "selecto_livebooks_dev"),
-  username: System.get_env("SELECTO_LIVEBOOKS_DB_USER", "postgres"),
-  password: System.get_env("SELECTO_LIVEBOOKS_DB_PASS", "postgres"),
-  hostname: System.get_env("SELECTO_LIVEBOOKS_DB_HOST", "localhost"),
-  port: String.to_integer(System.get_env("SELECTO_LIVEBOOKS_DB_PORT", "5432")),
-  pool_size: 5
-]
-
-case Process.whereis(JoinTypeLab.Repo) do
-  nil -> {:ok, _pid} = JoinTypeLab.Repo.start_link(repo_config)
-  _pid -> :ok
-end
-
-config = %{
-  repo: JoinTypeLab.Repo,
-  order_domain: JoinTypeLab.Domains.order_domain(),
-  employee_domain: JoinTypeLab.Domains.employee_domain()
-}
-
-{:ok, o_result} = Ecto.Adapters.SQL.query(config.repo, "select count(*) from orders", [])
-{:ok, e_result} = Ecto.Adapters.SQL.query(config.repo, "select count(*) from employees", [])
-[[order_count]] = o_result.rows
-[[employee_count]] = e_result.rows
 IO.puts("Connected. Orders: #{order_count}, Employees: #{employee_count}")
 
 config
@@ -213,31 +71,10 @@ This helper prints SQL and optionally executes the query.
 defmodule JoinTypeLab.Helpers do
   @moduledoc false
 
-  def explain(label, query) do
-    {sql, params} = Selecto.to_sql(query)
-
-    IO.puts("\n=== #{label} ===")
-    IO.puts(String.trim(sql))
-    IO.puts("Params: #{inspect(params)}")
-
-    {sql, params}
-  end
+  def explain(label, query), do: Selecto.Livebook.explain(label, query)
 
   def run(label, query, preview_count \\ 10) do
-    explain(label, query)
-
-    case Selecto.execute(query) do
-      {:ok, {rows, columns, aliases}} = ok ->
-        IO.puts("Rows: #{length(rows)}")
-        IO.puts("Columns: #{inspect(columns)}")
-        IO.puts("Aliases: #{inspect(aliases)}")
-        IO.inspect(Enum.take(rows, preview_count), label: "Preview (up to #{preview_count} rows)")
-        ok
-
-      {:error, error} = failure ->
-        IO.puts("Error: #{inspect(error)}")
-        failure
-    end
+    Selecto.Livebook.run(label, query, preview_count: preview_count)
   end
 end
 ```
@@ -405,7 +242,7 @@ Enum.each(hierarchy_variants, fn {label, join_config} ->
   domain = put_in(hierarchy_base, [:joins, :manager_tree], join_config)
 
   try do
-    selecto = Selecto.configure(domain, config.repo, validate: false)
+    selecto = Selecto.configure(domain, config.repo)
     join_meta = Selecto.joins(selecto)[:manager_tree]
 
     hierarchy_fields =
@@ -432,9 +269,9 @@ end)
 :ok
 ```
 
-## 5) Adjacency Query Attempt (`:adjacency_list`)
+## 5) Adjacency Query Runtime (`:adjacency_list`)
 
-Attempt a runnable adjacency hierarchy query and fall back to a compatibility note if unsupported in the current build.
+Run a small adjacency-list hierarchy query against the sample dataset.
 
 ```elixir
 adjacency_domain =
@@ -451,7 +288,7 @@ adjacency_domain =
   })
 
 adjacency_query =
-  Selecto.configure(adjacency_domain, config.repo, validate: false)
+  Selecto.configure(adjacency_domain, config.repo)
   |> Selecto.select([
     "id",
     "first_name",
@@ -462,14 +299,7 @@ adjacency_query =
   ])
   |> Selecto.limit(15)
 
-try do
-  JoinTypeLab.Helpers.run("Adjacency hierarchy runtime", adjacency_query)
-rescue
-  e ->
-    IO.puts("Hierarchy query generation is unavailable in this Selecto build:")
-    IO.puts(Exception.message(e))
-    IO.puts("Tip: use a build with hierarchy CTE compatibility fixes for runtime traversal examples.")
-end
+JoinTypeLab.Helpers.run("Adjacency hierarchy runtime", adjacency_query)
 ```
 
 ## Next Steps

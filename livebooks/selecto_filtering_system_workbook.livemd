@@ -2,22 +2,12 @@
 
 ## Setup 1) Install Dependencies
 
-Run this cell first. It installs Selecto and related packages from GitHub for this Livebook session.
+Run this cell first. It installs the local `selecto_livebooks` project and its
+current Selecto dependencies for this Livebook session.
 
 ```elixir
-selecto_dep = {:selecto, "0.4.0", override: true}
-selecto_db_postgresql_dep = {:selecto_db_postgresql, "0.4.0", override: true}
-
-Mix.install([
-  selecto_dep,
-  selecto_db_postgresql_dep,
-  {:postgrex, "~> 0.17"},
-  {:ecto_sql, "~> 3.11"},
-  {:jason, "~> 1.4"},
-  {:kino, "~> 0.12"}
-])
-
-IO.puts("Using Selecto dependency: #{inspect(selecto_dep)}")
+Code.require_file(Path.expand("support/bootstrap.exs", __DIR__))
+SelectoLivebooksNotebookBootstrap.install!()
 ```
 
 ## Overview
@@ -47,134 +37,15 @@ Before running, initialize the sample database:
 mix setup
 ```
 
-## Setup 2) Connect to Repo and Build Domain Config
+## Setup 2) Connect to Shared Repo and Load Domains
 
-This cell defines a Repo and focused domain configuration for filter demonstrations.
+This cell starts the shared sample-app repo and loads maintained domain modules
+from `selecto_livebooks`.
 
 ```elixir
-defmodule FilteringLab.Repo do
-  use Ecto.Repo,
-    otp_app: :filtering_lab_livebook,
-    adapter: Ecto.Adapters.Postgres
-end
+config = SelectoLivebooks.NotebookSupport.config([:order_domain, :product_domain])
+order_count = SelectoLivebooks.NotebookSupport.table_counts(["orders"])["orders"]
 
-defmodule FilteringLab.OrderDomain do
-  @moduledoc false
-
-  def domain do
-    %{
-      name: "Orders",
-      source: %{
-        source_table: "orders",
-        primary_key: :id,
-        fields: [
-          :id,
-          :order_number,
-          :status,
-          :total,
-          :shipping_country,
-          :shipped_at,
-          :delivered_at,
-          :inserted_at,
-          :customer_id
-        ],
-        columns: %{
-          id: %{type: :integer},
-          order_number: %{type: :string},
-          status: %{type: :string},
-          total: %{type: :decimal},
-          shipping_country: %{type: :string},
-          shipped_at: %{type: :utc_datetime},
-          delivered_at: %{type: :utc_datetime},
-          inserted_at: %{type: :utc_datetime},
-          customer_id: %{type: :integer}
-        },
-        associations: %{
-          customer: %{field: :customer, queryable: :customers, owner_key: :customer_id, related_key: :id},
-          order_items: %{field: :order_items, queryable: :order_items, owner_key: :id, related_key: :order_id}
-        }
-      },
-      schemas: %{
-        customers: %{
-          source_table: "customers",
-          primary_key: :id,
-          fields: [:id, :name, :email, :tier, :country, :active],
-          redact_fields: [],
-          columns: %{
-            id: %{type: :integer},
-            name: %{type: :string},
-            email: %{type: :string},
-            tier: %{type: :string},
-            country: %{type: :string},
-            active: %{type: :boolean}
-          }
-        },
-        order_items: %{
-          source_table: "order_items",
-          primary_key: :id,
-          fields: [:id, :order_id, :product_id, :quantity, :line_total],
-          redact_fields: [],
-          columns: %{
-            id: %{type: :integer},
-            order_id: %{type: :integer},
-            product_id: %{type: :integer},
-            quantity: %{type: :integer},
-            line_total: %{type: :decimal}
-          }
-        }
-      },
-      joins: %{
-        customer: %{
-          name: "Customer",
-          type: :left,
-          source: "customers",
-          on: [%{left: "customer_id", right: "id"}],
-          fields: %{
-            name: %{type: :string},
-            email: %{type: :string},
-            tier: %{type: :string},
-            country: %{type: :string}
-          }
-        },
-        order_items: %{
-          name: "Order Items",
-          type: :left,
-          source: "order_items",
-          on: [%{left: "id", right: "order_id"}],
-          fields: %{
-            product_id: %{type: :integer},
-            quantity: %{type: :integer},
-            line_total: %{type: :decimal}
-          }
-        }
-      },
-      default_selected: ["order_number", "status", "total", "inserted_at"],
-      default_order_by: [{"inserted_at", :desc}]
-    }
-  end
-end
-
-repo_config = [
-  database: System.get_env("SELECTO_LIVEBOOKS_DB", "selecto_livebooks_dev"),
-  username: System.get_env("SELECTO_LIVEBOOKS_DB_USER", "postgres"),
-  password: System.get_env("SELECTO_LIVEBOOKS_DB_PASS", "postgres"),
-  hostname: System.get_env("SELECTO_LIVEBOOKS_DB_HOST", "localhost"),
-  port: String.to_integer(System.get_env("SELECTO_LIVEBOOKS_DB_PORT", "5432")),
-  pool_size: 5
-]
-
-case Process.whereis(FilteringLab.Repo) do
-  nil -> {:ok, _pid} = FilteringLab.Repo.start_link(repo_config)
-  _pid -> :ok
-end
-
-config = %{
-  repo: FilteringLab.Repo,
-  order_domain: FilteringLab.OrderDomain.domain()
-}
-
-{:ok, result} = Ecto.Adapters.SQL.query(config.repo, "select count(*) from orders", [])
-[[order_count]] = result.rows
 IO.puts("Connected. Orders in dataset: #{order_count}")
 
 config
@@ -188,33 +59,27 @@ This helper cell prints SQL/params and executes a query with a compact preview.
 defmodule FilteringLab.Helpers do
   @moduledoc false
 
-  def explain(label, query) do
-    {sql, params} = Selecto.to_sql(query)
-
-    IO.puts("\n=== #{label} ===")
-    IO.puts(String.trim(sql))
-    IO.puts("Params: #{inspect(params)}")
-
-    {sql, params}
-  end
+  def explain(label, query), do: Selecto.Livebook.explain(label, query)
 
   def run(label, query, preview_count \\ 5) do
-    explain(label, query)
-
-    case Selecto.execute(query) do
-      {:ok, {rows, columns, aliases}} = ok ->
-        IO.puts("Rows: #{length(rows)}")
-        IO.puts("Columns: #{inspect(columns)}")
-        IO.puts("Aliases: #{inspect(aliases)}")
-        IO.inspect(Enum.take(rows, preview_count), label: "Preview (up to #{preview_count} rows)")
-        ok
-
-      {:error, error} = failure ->
-        IO.puts("Error: #{inspect(error)}")
-        failure
-    end
+    Selecto.Livebook.run(label, query, preview_count: preview_count)
   end
 end
+```
+
+## Setup 4) Current Expression DSL Imports
+
+The first sections now use the shipped expression DSL (`Selecto.ExprMacros` and
+`~SELECTO`) where it improves readability. Later cells still keep tuple forms
+when they better expose lower-level filter shapes.
+
+```elixir
+import Selecto.ExprMacros
+import Selecto.Sigil
+
+alias Selecto.Expr, as: X
+
+:ok
 ```
 
 ## 1) Equality and Comparison Filters
@@ -222,12 +87,13 @@ end
 Use direct equality and numeric comparisons to narrow results quickly.
 
 ```elixir
+import Selecto.ExprMacros
+
 basic_filter_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select(["order_number", "status", "total", "shipping_country"])
-  |> Selecto.filter({"status", "delivered"})
-  |> Selecto.filter({"total", {:gt, 100}})
-  |> Selecto.order_by({"total", :desc})
+  |> Selecto.select(select([order_number, status, total, shipping_country]))
+  |> Selecto.filter(where(status == "delivered" and total > 100))
+  |> Selecto.order_by(order_by([desc(total)]))
   |> Selecto.limit(10)
 
 FilteringLab.Helpers.run("Equality + comparison", basic_filter_query)
@@ -238,21 +104,27 @@ FilteringLab.Helpers.run("Equality + comparison", basic_filter_query)
 Use `:in`, `:not_in`, and `:between` for set-based and bounded filtering.
 
 ```elixir
+import Selecto.ExprMacros
+
+alias Selecto.Expr, as: X
+
+statuses = ["processing", "shipped", "delivered"]
+
 membership_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select(["id", "order_number", "status", "total"])
-  |> Selecto.filter({"status", {:in, ["processing", "shipped", "delivered"]}})
-  |> Selecto.filter({"id", {:between, 1, 50}})
-  |> Selecto.order_by({"id", :asc})
+  |> Selecto.select(select([id, order_number, status, total]))
+  |> Selecto.filter(X.in("status", statuses))
+  |> Selecto.filter(where(id >= 1 and id <= 50))
+  |> Selecto.order_by(order_by([asc(id)]))
   |> Selecto.limit(10)
 
 FilteringLab.Helpers.run("Membership + range", membership_query)
 
 not_in_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select(["order_number", "status", "total"])
-  |> Selecto.filter({"status", {:not_in, ["cancelled", "returned"]}})
-  |> Selecto.order_by({"inserted_at", :desc})
+  |> Selecto.select(select([order_number, status, total]))
+  |> Selecto.filter(where(not_in(status, ["cancelled", "returned"])))
+  |> Selecto.order_by(order_by([desc(inserted_at)]))
   |> Selecto.limit(10)
 
 FilteringLab.Helpers.run("Not-in filter", not_in_query)
@@ -263,17 +135,17 @@ FilteringLab.Helpers.run("Not-in filter", not_in_query)
 Pattern matching works across source and joined fields.
 
 ```elixir
+import Selecto.ExprMacros
+import Selecto.Sigil
+
+name_pattern = "%a%"
+country_pattern = "%U%"
+
 string_filter_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select(["order_number", "customer.name", "shipping_country"])
-  |> Selecto.filter(
-    {:or,
-     [
-       {"customer.name", {:ilike, "%a%"}},
-       {"shipping_country", {:like, "%U%"}}
-     ]}
-  )
-  |> Selecto.order_by({"inserted_at", :desc})
+  |> Selecto.select(select([order_number, customer.name, shipping_country]))
+  |> Selecto.filter(~SELECTO"ilike(customer.name, ^name_pattern) or like(shipping_country, ^country_pattern)")
+  |> Selecto.order_by(order_by([desc(inserted_at)]))
   |> Selecto.limit(10)
 
 FilteringLab.Helpers.run("String pattern filters", string_filter_query)
@@ -284,12 +156,13 @@ FilteringLab.Helpers.run("String pattern filters", string_filter_query)
 Use `nil` for `IS NULL` and `:not_null` for `IS NOT NULL`.
 
 ```elixir
+import Selecto.ExprMacros
+
 null_filter_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select(["order_number", "status", "shipped_at", "delivered_at"])
-  |> Selecto.filter({"shipped_at", :not_null})
-  |> Selecto.filter({"delivered_at", nil})
-  |> Selecto.order_by({"inserted_at", :desc})
+  |> Selecto.select(select([order_number, status, shipped_at, delivered_at]))
+  |> Selecto.filter(where(not is_nil(shipped_at) and is_nil(delivered_at)))
+  |> Selecto.order_by(order_by([desc(inserted_at)]))
   |> Selecto.limit(10)
 
 FilteringLab.Helpers.run("Null checks", null_filter_query)
@@ -300,18 +173,15 @@ FilteringLab.Helpers.run("Null checks", null_filter_query)
 Build expressive boolean logic trees with nested operators.
 
 ```elixir
+import Selecto.ExprMacros
+
 logical_filter_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select(["order_number", "status", "total", "customer.tier", "shipping_country"])
+  |> Selecto.select(select([order_number, status, total, customer.tier, shipping_country]))
   |> Selecto.filter(
-    {:and,
-     [
-       {"total", {:gte, 50}},
-       {:or, [{"status", "processing"}, {"status", "shipped"}]},
-       {:not, {"shipping_country", "Antarctica"}}
-     ]}
+    where(total >= 50 and (status == "processing" or status == "shipped") and shipping_country != "Antarctica")
   )
-  |> Selecto.order_by({"total", :desc})
+  |> Selecto.order_by(order_by([desc(total)]))
   |> Selecto.limit(10)
 
 FilteringLab.Helpers.run("Nested logical filters", logical_filter_query)
@@ -322,18 +192,16 @@ FilteringLab.Helpers.run("Nested logical filters", logical_filter_query)
 Filter on joined table fields without manually writing JOIN clauses.
 
 ```elixir
+import Selecto.ExprMacros
+
+alias Selecto.Expr, as: X
+
 join_filter_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select([
-    "order_number",
-    "customer.name",
-    "customer.tier",
-    "order_items.quantity",
-    "order_items.line_total"
-  ])
-  |> Selecto.filter({"customer.tier", {:in, ["gold", "platinum", "premium"]}})
-  |> Selecto.filter({"order_items.quantity", {:gt, 1}})
-  |> Selecto.order_by({"inserted_at", :desc})
+  |> Selecto.select(select([order_number, customer.name, customer.tier, order_items.quantity, order_items.line_total]))
+  |> Selecto.filter(X.in("customer.tier", ["gold", "platinum", "premium"]))
+  |> Selecto.filter(where(order_items.quantity > 1))
+  |> Selecto.order_by(order_by([desc(inserted_at)]))
   |> Selecto.limit(10)
 
 FilteringLab.Helpers.run("Join-aware filters", join_filter_query)
@@ -344,23 +212,27 @@ FilteringLab.Helpers.run("Join-aware filters", join_filter_query)
 `filter/2` is composable. Build a base query, then layer constraints incrementally.
 
 ```elixir
+import Selecto.ExprMacros
+
+alias Selecto.Expr, as: X
+
 base_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select(["order_number", "status", "total", "shipping_country"])
-  |> Selecto.order_by({"inserted_at", :desc})
+  |> Selecto.select(select([order_number, status, total, shipping_country]))
+  |> Selecto.order_by(order_by([desc(inserted_at)]))
   |> Selecto.limit(10)
 
 geo_filtered_query =
   base_query
-  |> Selecto.filter({"shipping_country", {:in, ["USA", "Canada", "UK"]}})
+  |> Selecto.filter(X.in("shipping_country", ["USA", "Canada", "UK"]))
 
 status_filtered_query =
   geo_filtered_query
-  |> Selecto.filter({"status", {:not_in, ["cancelled"]}})
+  |> Selecto.filter(where(not_in(status, ["cancelled"])))
 
 composable_filter_query =
   status_filtered_query
-  |> Selecto.filter({"total", {:gte, 75}})
+  |> Selecto.filter(where(total >= 75))
 
 IO.inspect(composable_filter_query.set.filtered, label: "Accumulated filters")
 
@@ -470,27 +342,29 @@ Compare pre-retarget and post-retarget filtering behavior and inspect the result
 For the current Selecto build, post-retarget filters should target the retarget root field name directly (for example `"quantity"`), so this example uses `Selecto.post_retarget_filter/2`.
 
 ```elixir
+import Selecto.ExprMacros
+
 retarget_pre_filter_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.filter({"status", "delivered"})
+  |> Selecto.filter(where(status == "delivered"))
   |> Selecto.retarget(:order_items, subquery_strategy: :exists)
-  |> Selecto.select(["order_items.product_id", "order_items.quantity", "order_items.line_total"])
+  |> Selecto.select(select([order_items.product_id, order_items.quantity, order_items.line_total]))
   |> Selecto.limit(10)
 
 retarget_pre_and_post_filter_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.filter({"status", "delivered"})
+  |> Selecto.filter(where(status == "delivered"))
   |> Selecto.retarget(:order_items, subquery_strategy: :exists)
   |> Selecto.post_retarget_filter({"quantity", 2})
-  |> Selecto.select(["order_items.product_id", "order_items.quantity", "order_items.line_total"])
+  |> Selecto.select(select([order_items.product_id, order_items.quantity, order_items.line_total]))
   |> Selecto.limit(10)
 
 retarget_post_only_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.filter({"status", "delivered"})
+  |> Selecto.filter(where(status == "delivered"))
   |> Selecto.retarget(:order_items, subquery_strategy: :exists, preserve_filters: false)
   |> Selecto.post_retarget_filter({"quantity", 2})
-  |> Selecto.select(["order_items.product_id", "order_items.quantity", "order_items.line_total"])
+  |> Selecto.select(select([order_items.product_id, order_items.quantity, order_items.line_total]))
   |> Selecto.limit(10)
 
 for {label, query} <- [
@@ -516,6 +390,8 @@ end
 Edit the challenge builder to meet the goal, then use SQL fragment checks to confirm the query includes each required condition.
 
 ```elixir
+import Selecto.ExprMacros
+
 challenge_goal = """
 Return delivered or shipped orders to USA/Canada with total >= 120,
 sorted by total descending.
@@ -525,16 +401,14 @@ IO.puts("Challenge goal: " <> String.trim(challenge_goal))
 
 challenge_query_builder = fn ->
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select(["order_number", "status", "shipping_country", "total"])
+  |> Selecto.select(select([order_number, status, shipping_country, total]))
   |> Selecto.filter(
-    {:and,
-     [
-       {:or, [{"status", "delivered"}, {"status", "shipped"}]},
-       {"shipping_country", {:in, ["USA", "Canada"]}},
-       {"total", {:gte, 120}}
-     ]}
+    where(
+      (status == "delivered" or status == "shipped") and
+        (shipping_country == "USA" or shipping_country == "Canada") and total >= 120
+    )
   )
-  |> Selecto.order_by({"total", :desc})
+  |> Selecto.order_by(order_by([desc(total)]))
   |> Selecto.limit(10)
 end
 

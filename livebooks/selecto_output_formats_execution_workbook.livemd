@@ -2,22 +2,12 @@
 
 ## Setup 1) Install Dependencies
 
-Run this cell first. It installs Selecto and related packages from GitHub for this Livebook session.
+Run this cell first. It installs the local `selecto_livebooks` project and its
+current Selecto dependencies for this Livebook session.
 
 ```elixir
-selecto_dep = {:selecto, "0.4.0", override: true}
-selecto_db_postgresql_dep = {:selecto_db_postgresql, "0.4.0", override: true}
-
-Mix.install([
-  selecto_dep,
-  selecto_db_postgresql_dep,
-  {:postgrex, "~> 0.17"},
-  {:ecto_sql, "~> 3.11"},
-  {:jason, "~> 1.4"},
-  {:kino, "~> 0.12"}
-])
-
-IO.puts("Using Selecto dependency: #{inspect(selecto_dep)}")
+Code.require_file(Path.expand("support/bootstrap.exs", __DIR__))
+SelectoLivebooksNotebookBootstrap.install!()
 ```
 
 ## Overview
@@ -61,92 +51,17 @@ Before running, initialize the sample database:
 mix setup
 ```
 
-## Setup 2) Connect to Repo and Build Domains
+## Setup 2) Connect to Shared Repo and Load Domains
 
-This cell defines a local Repo plus minimal product and order domains.
+This cell starts the shared sample-app repo and loads the maintained product and
+order domains from `selecto_livebooks`.
 
 ```elixir
-defmodule OutputLab.Repo do
-  use Ecto.Repo,
-    otp_app: :output_lab_livebook,
-    adapter: Ecto.Adapters.Postgres
-end
+config = SelectoLivebooks.NotebookSupport.config([:product_domain, :order_domain])
+counts = SelectoLivebooks.NotebookSupport.table_counts(["products", "orders"])
+product_count = counts["products"]
+order_count = counts["orders"]
 
-defmodule OutputLab.Domains do
-  @moduledoc false
-
-  def product_domain do
-    %{
-      name: "Products",
-      source: %{
-        source_table: "products",
-        primary_key: :id,
-        fields: [:id, :name, :sku, :price, :active, :inserted_at],
-        columns: %{
-          id: %{type: :integer},
-          name: %{type: :string},
-          sku: %{type: :string},
-          price: %{type: :decimal},
-          active: %{type: :boolean},
-          inserted_at: %{type: :utc_datetime}
-        },
-        associations: %{}
-      },
-      schemas: %{},
-      joins: %{},
-      default_selected: ["name", "sku", "price"],
-      default_order_by: [{"name", :asc}]
-    }
-  end
-
-  def order_domain do
-    %{
-      name: "Orders",
-      source: %{
-        source_table: "orders",
-        primary_key: :id,
-        fields: [:id, :order_number, :status, :total, :inserted_at],
-        columns: %{
-          id: %{type: :integer},
-          order_number: %{type: :string},
-          status: %{type: :string},
-          total: %{type: :decimal},
-          inserted_at: %{type: :utc_datetime}
-        },
-        associations: %{}
-      },
-      schemas: %{},
-      joins: %{},
-      default_selected: ["order_number", "status", "total"],
-      default_order_by: [{"total", :desc}]
-    }
-  end
-end
-
-repo_config = [
-  database: System.get_env("SELECTO_LIVEBOOKS_DB", "selecto_livebooks_dev"),
-  username: System.get_env("SELECTO_LIVEBOOKS_DB_USER", "postgres"),
-  password: System.get_env("SELECTO_LIVEBOOKS_DB_PASS", "postgres"),
-  hostname: System.get_env("SELECTO_LIVEBOOKS_DB_HOST", "localhost"),
-  port: String.to_integer(System.get_env("SELECTO_LIVEBOOKS_DB_PORT", "5432")),
-  pool_size: 5
-]
-
-case Process.whereis(OutputLab.Repo) do
-  nil -> {:ok, _pid} = OutputLab.Repo.start_link(repo_config)
-  _pid -> :ok
-end
-
-config = %{
-  repo: OutputLab.Repo,
-  product_domain: OutputLab.Domains.product_domain(),
-  order_domain: OutputLab.Domains.order_domain()
-}
-
-{:ok, p_result} = Ecto.Adapters.SQL.query(config.repo, "select count(*) from products", [])
-{:ok, o_result} = Ecto.Adapters.SQL.query(config.repo, "select count(*) from orders", [])
-[[product_count]] = p_result.rows
-[[order_count]] = o_result.rows
 IO.puts("Connected. Products: #{product_count}, Orders: #{order_count}")
 
 config
@@ -160,10 +75,19 @@ This helper prints SQL and parameters once for each query.
 defmodule OutputLab.Helpers do
   @moduledoc false
 
-  def explain(label, query) do
-    Selecto.Livebook.explain(label, query)
-  end
+  def explain(label, query), do: Selecto.Livebook.explain(label, query)
 end
+```
+
+## Setup 4) Current Expression DSL Imports
+
+This workbook focuses on execution behavior, but the example queries now use the
+current expression DSL where it keeps the runtime/output examples concise.
+
+```elixir
+import Selecto.ExprMacros
+
+:ok
 ```
 
 ## 1) Baseline `execute/2` (Raw Tuple Output)
@@ -171,11 +95,13 @@ end
 `execute/2` returns `{:ok, {rows, columns, aliases}}` by default.
 
 ```elixir
+import Selecto.ExprMacros
+
 raw_query =
   Selecto.configure(config.product_domain, config.repo)
-  |> Selecto.select(["name", "sku", "price"])
-  |> Selecto.filter({"active", true})
-  |> Selecto.order_by({"name", :asc})
+  |> Selecto.select(select([name, sku, price]))
+  |> Selecto.filter(where(active == true))
+  |> Selecto.order_by(order_by([asc(name)]))
   |> Selecto.limit(5)
 
 OutputLab.Helpers.explain("Raw execute/2", raw_query)
@@ -196,11 +122,13 @@ end
 Get result data plus metadata like SQL text, params, and execution time.
 
 ```elixir
+import Selecto.ExprMacros
+
 metadata_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select(["order_number", "status", "total"])
-  |> Selecto.filter({"status", "delivered"})
-  |> Selecto.order_by({"total", :desc})
+  |> Selecto.select(select([order_number, status, total]))
+  |> Selecto.filter(where(status == "delivered"))
+  |> Selecto.order_by(order_by([desc(total)]))
   |> Selecto.limit(3)
 
 OutputLab.Helpers.explain("execute_with_metadata/2", metadata_query)
@@ -224,17 +152,19 @@ end
 `execute_one/2` enforces exactly one row.
 
 ```elixir
+import Selecto.ExprMacros
+
 one_row_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select(["order_number", "status", "total"])
-  |> Selecto.filter({"status", "delivered"})
-  |> Selecto.order_by({"total", :desc})
+  |> Selecto.select(select([order_number, status, total]))
+  |> Selecto.filter(where(status == "delivered"))
+  |> Selecto.order_by(order_by([desc(total)]))
   |> Selecto.limit(1)
 
 many_rows_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select(["order_number", "status", "total"])
-  |> Selecto.filter({"status", "delivered"})
+  |> Selecto.select(select([order_number, status, total]))
+  |> Selecto.filter(where(status == "delivered"))
   |> Selecto.limit(2)
 
 OutputLab.Helpers.explain("execute_one/2 success case", one_row_query)
@@ -264,11 +194,13 @@ end
 Switch `format` at execution time to get payloads ready for APIs or exports.
 
 ```elixir
+import Selecto.ExprMacros
+
 format_query =
   Selecto.configure(config.product_domain, config.repo)
-  |> Selecto.select(["name", "sku", "price"])
-  |> Selecto.filter({"active", true})
-  |> Selecto.order_by({"name", :asc})
+  |> Selecto.select(select([name, sku, price]))
+  |> Selecto.filter(where(active == true))
+  |> Selecto.order_by(order_by([asc(name)]))
   |> Selecto.limit(5)
 
 OutputLab.Helpers.explain("Formatted output query", format_query)
@@ -297,11 +229,13 @@ end
 Use type-coerced maps and lazy streaming for larger processing pipelines.
 
 ```elixir
+import Selecto.ExprMacros
+
 advanced_format_query =
   Selecto.configure(config.product_domain, config.repo)
-  |> Selecto.select(["name", "price", "active"])
-  |> Selecto.filter({"active", true})
-  |> Selecto.order_by({"name", :asc})
+  |> Selecto.select(select([name, price, active]))
+  |> Selecto.filter(where(active == true))
+  |> Selecto.order_by(order_by([asc(name)]))
   |> Selecto.limit(10)
 
 OutputLab.Helpers.explain("Advanced format query", advanced_format_query)
@@ -343,10 +277,12 @@ For adapter-backed paths, streaming requires an explicit contract:
 * connection input must match what the adapter's `stream/4` accepts
 
 ```elixir
+import Selecto.ExprMacros
+
 stream_query =
   Selecto.configure(config.product_domain, config.repo)
-  |> Selecto.select(["id", "name"])
-  |> Selecto.order_by({"id", :asc})
+  |> Selecto.select(select([id, name]))
+  |> Selecto.order_by(order_by([asc(id)]))
   |> Selecto.limit(5)
 
 OutputLab.Helpers.explain("execute_stream/2 query", stream_query)
@@ -362,9 +298,13 @@ case Selecto.execute_stream(stream_query, analyze_complexity: false) do
 end
 
 adapter_stream_probe =
-  Selecto.configure(config.product_domain, repo_config, adapter: SelectoDBPostgreSQL.Adapter)
-  |> Selecto.select(["id", "name"])
-  |> Selecto.order_by({"id", :asc})
+  Selecto.configure(
+    config.product_domain,
+    SelectoLivebooks.NotebookSupport.repo_config(),
+    adapter: SelectoDBPostgreSQL.Adapter
+  )
+  |> Selecto.select(select([id, name]))
+  |> Selecto.order_by(order_by([asc(id)]))
   |> Selecto.limit(5)
 
 case Selecto.execute_stream(adapter_stream_probe, analyze_complexity: false) do
