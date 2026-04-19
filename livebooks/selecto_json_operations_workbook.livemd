@@ -181,31 +181,10 @@ This helper cell prints SQL/params and executes a query with a compact preview.
 defmodule JsonLab.Helpers do
   @moduledoc false
 
-  def explain(label, query) do
-    {sql, params} = Selecto.to_sql(query)
-
-    IO.puts("\n=== #{label} ===")
-    IO.puts(String.trim(sql))
-    IO.puts("Params: #{inspect(params)}")
-
-    {sql, params}
-  end
+  def explain(label, query), do: Selecto.Livebook.explain(label, query)
 
   def run(label, query, preview_count \\ 10) do
-    explain(label, query)
-
-    case Selecto.execute(query) do
-      {:ok, {rows, columns, aliases}} = ok ->
-        IO.puts("Rows: #{length(rows)}")
-        IO.puts("Columns: #{inspect(columns)}")
-        IO.puts("Aliases: #{inspect(aliases)}")
-        IO.inspect(Enum.take(rows, preview_count), label: "Preview (up to #{preview_count} rows)")
-        ok
-
-      {:error, error} = failure ->
-        IO.puts("Error: #{inspect(error)}")
-        failure
-    end
+    Selecto.Livebook.run(label, query, preview_count: preview_count)
   end
 
   def run_shape(label, query, preview_count \\ 10) do
@@ -226,20 +205,34 @@ defmodule JsonLab.Helpers do
 end
 ```
 
+## Setup 5) Current Expression DSL Imports
+
+This workbook keeps the JSON-specific operators explicit, but now uses the
+current expression DSL for the surrounding relational select, filter, and order
+clauses.
+
+```elixir
+import Selecto.ExprMacros
+
+:ok
+```
+
 ## 1) Extract JSON Fields into Select Columns
 
 Use `json_select` to project JSON paths into result columns alongside standard relational fields.
 
 ```elixir
+import Selecto.ExprMacros
+
 json_extract_query =
   Selecto.configure(config.product_domain, config.repo)
-  |> Selecto.select(["name", "sku", "price"])
+  |> Selecto.select(select([name, sku, price]))
   |> Selecto.json_select([
     {:json_extract_text, "metadata", "$.price_band", as: "price_band"},
     {:json_extract_text, "metadata", "$.warehouse.zone", as: "warehouse_zone"},
     {:json_extract_text, "metadata", "$.flags[0]", as: "primary_flag"}
   ])
-  |> Selecto.order_by({"price", :desc})
+  |> Selecto.order_by(order_by([desc(price)]))
   |> Selecto.limit(10)
 
 JsonLab.Helpers.run("JSON extraction", json_extract_query)
@@ -250,16 +243,18 @@ JsonLab.Helpers.run("JSON extraction", json_extract_query)
 Use `json_filter` with containment to keep only products whose JSON metadata declares `price_band = premium`.
 
 ```elixir
+import Selecto.ExprMacros
+
 json_filter_query =
   Selecto.configure(config.product_domain, config.repo)
-  |> Selecto.select(["name", "sku", "price"])
+  |> Selecto.select(select([name, sku, price]))
   |> Selecto.json_select([
     {:json_extract_text, "metadata", "$.price_band", as: "price_band"},
     {:json_extract_text, "metadata", "$.warehouse.zone", as: "warehouse_zone"}
   ])
   |> Selecto.json_filter({:json_contains, "metadata", %{"price_band" => "premium"}})
-  |> Selecto.filter({"active", true})
-  |> Selecto.order_by({"price", :desc})
+  |> Selecto.filter(where(active == true))
+  |> Selecto.order_by(order_by([desc(price)]))
   |> Selecto.limit(10)
 
 JsonLab.Helpers.run("JSON containment filter", json_filter_query)
@@ -270,15 +265,17 @@ JsonLab.Helpers.run("JSON containment filter", json_filter_query)
 Apply `json_order_by` to sort by JSON path output after relational ordering.
 
 ```elixir
+import Selecto.ExprMacros
+
 json_order_query =
   Selecto.configure(config.product_domain, config.repo)
-  |> Selecto.select(["name", "sku", "price"])
+  |> Selecto.select(select([name, sku, price]))
   |> Selecto.json_select([
     {:json_extract_text, "metadata", "$.warehouse.zone", as: "warehouse_zone"},
     {:json_extract_text, "metadata", "$.warehouse.bin", as: "warehouse_bin"}
   ])
-  |> Selecto.filter({"active", true})
-  |> Selecto.order_by({"name", :asc})
+  |> Selecto.filter(where(active == true))
+  |> Selecto.order_by(order_by([asc(name)]))
   |> Selecto.json_order_by({:json_extract_text, "metadata", "$.warehouse.zone", :asc})
   |> Selecto.limit(10)
 
@@ -290,17 +287,19 @@ JsonLab.Helpers.run("JSON path ordering", json_order_query)
 Combine relational filters, JSON filters, JSON projections, and mixed ordering in one query.
 
 ```elixir
+import Selecto.ExprMacros
+
 combined_json_query =
   Selecto.configure(config.product_domain, config.repo)
-  |> Selecto.select(["name", "sku", "price", "active"])
+  |> Selecto.select(select([name, sku, price, active]))
   |> Selecto.json_select([
     {:json_extract_text, "metadata", "$.price_band", as: "price_band"},
     {:json_extract_text, "metadata", "$.warehouse.zone", as: "warehouse_zone"},
     {:json_extract_text, "metadata", "$.flags[1]", as: "secondary_flag"}
   ])
-  |> Selecto.filter({"price", {:>=, 25}})
+  |> Selecto.filter(where(price >= 25))
   |> Selecto.json_filter({:json_contains, "metadata", %{"warehouse" => %{"zone" => "in_stock"}}})
-  |> Selecto.order_by({"price", :desc})
+  |> Selecto.order_by(order_by([desc(price)]))
   |> Selecto.json_order_by({:json_extract_text, "metadata", "$.price_band", :asc})
   |> Selecto.limit(15)
 
@@ -312,6 +311,8 @@ JsonLab.Helpers.run("Combined JSON + relational query", combined_json_query)
 Use JSON existence checks for optional keys, then add path-based value matching.
 
 ```elixir
+import Selecto.ExprMacros
+
 optional_key_seed =
   config.repo.query!("""
   UPDATE products
@@ -331,7 +332,7 @@ IO.puts("Optional promo_code keys refreshed: #{optional_key_seed.num_rows}")
 
 json_existence_query =
   Selecto.configure(config.product_domain, config.repo)
-  |> Selecto.select(["name", "sku", "price", "featured"])
+  |> Selecto.select(select([name, sku, price, featured]))
   |> Selecto.json_select([
     {:json_extract_text, "metadata", "$.promo_code", as: "promo_code"},
     {:json_extract_text, "metadata", "$.warehouse.zone", as: "warehouse_zone"}
@@ -340,7 +341,7 @@ json_existence_query =
     {:json_path_exists, "metadata", "$.promo_code"},
     {:json_extract_text, "metadata", "$.warehouse.zone", {:=, "in_stock"}}
   ])
-  |> Selecto.order_by({"price", :desc})
+  |> Selecto.order_by(order_by([desc(price)]))
   |> Selecto.limit(10)
 
 JsonLab.Helpers.run("JSON path existence + path match", json_existence_query)
@@ -351,19 +352,21 @@ JsonLab.Helpers.run("JSON path existence + path match", json_existence_query)
 `price_band = premium` was seeded from `price >= 100`. This section compares JSON and relational implementations of the same business rule.
 
 ```elixir
+import Selecto.ExprMacros
+
 premium_by_json_query =
   Selecto.configure(config.product_domain, config.repo)
-  |> Selecto.select(["name", "sku", "price"])
+  |> Selecto.select(select([name, sku, price]))
   |> Selecto.json_select([{:json_extract_text, "metadata", "$.price_band", as: "price_band"}])
   |> Selecto.json_filter({:json_contains, "metadata", %{"price_band" => "premium"}})
-  |> Selecto.order_by({"price", :desc})
+  |> Selecto.order_by(order_by([desc(price)]))
   |> Selecto.limit(20)
 
 premium_by_relational_query =
   Selecto.configure(config.product_domain, config.repo)
-  |> Selecto.select(["name", "sku", "price"])
-  |> Selecto.filter({"price", {:>=, 100}})
-  |> Selecto.order_by({"price", :desc})
+  |> Selecto.select(select([name, sku, price]))
+  |> Selecto.filter(where(price >= 100))
+  |> Selecto.order_by(order_by([desc(price)]))
   |> Selecto.limit(20)
 
 {:ok, {json_rows, _, _}} = JsonLab.Helpers.run("Premium by JSON price_band", premium_by_json_query, 5)
@@ -381,6 +384,8 @@ When shaping, use explicit field selectors for JSON paths (rather than alias-onl
 `select_shape/2` is the final projection step, so a prior `select/2` is unnecessary in the same pipeline.
 
 ```elixir
+import Selecto.ExprMacros
+
 json_shaped_query =
   Selecto.configure(config.product_domain, config.repo)
   |> Selecto.json_select([
@@ -395,7 +400,7 @@ json_shaped_query =
       {:field, "metadata.warehouse.zone", "warehouse_zone"}
     }
   ])
-  |> Selecto.order_by({"price", :desc})
+  |> Selecto.order_by(order_by([desc(price)]))
   |> Selecto.limit(10)
 
 JsonLab.Helpers.run_shape("Shaped JSON projection", json_shaped_query, 10)

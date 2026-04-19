@@ -134,15 +134,28 @@ defmodule SetOpsLab.Helpers do
 end
 ```
 
+## Setup 4) Current Expression DSL Imports
+
+This workbook keeps the set-operation calls explicit, but now uses the current
+expression DSL for the cohort-building queries that feed those set operations.
+
+```elixir
+import Selecto.ExprMacros
+
+:ok
+```
+
 ## 1) Build Compatible Cohorts
 
 Both cohorts select the same columns so they can participate in set operations.
 
 ```elixir
+import Selecto.ExprMacros
+
 employees_with_manager =
   Selecto.configure(config.employee_domain, config.repo)
-  |> Selecto.select(["id", "first_name", "last_name", "title"])
-  |> Selecto.filter({"manager_id", :not_null})
+  |> Selecto.select(select([id, first_name, last_name, title]))
+  |> Selecto.filter(where(not is_nil(manager_id)))
 
 employees_with_direct_reports =
   Selecto.configure(config.employee_domain, config.repo)
@@ -155,9 +168,9 @@ employees_with_direct_reports =
       id: %{type: :integer}
     }
   )
-  |> Selecto.filter({"direct_report.id", :not_null})
-  |> Selecto.select(["id", "first_name", "last_name", "title"])
-  |> Selecto.group_by(["id", "first_name", "last_name", "title"])
+  |> Selecto.filter(where(not is_nil(direct_report.id)))
+  |> Selecto.select(select([id, first_name, last_name, title]))
+  |> Selecto.group_by(group_by([id, first_name, last_name, title]))
 
 :ok
 ```
@@ -270,6 +283,8 @@ end)
 Use `column_mapping` to union compatible value types across domains with different field names.
 
 ```elixir
+import Selecto.ExprMacros
+
 customer_domain_for_set_ops = %{
   name: "Customers",
   source: %{
@@ -291,14 +306,14 @@ customer_domain_for_set_ops = %{
 
 employees_identity_query =
   Selecto.configure(config.employee_domain, config.repo)
-  |> Selecto.select(["id", "first_name", "last_name", "department"])
-  |> Selecto.filter({"active", true})
+  |> Selecto.select(select([id, first_name, last_name, department]))
+  |> Selecto.filter(where(active == true))
   |> Selecto.limit(25)
 
 customers_identity_query =
   Selecto.configure(customer_domain_for_set_ops, config.repo)
-  |> Selecto.select(["id", "name", "email", "country"])
-  |> Selecto.filter({"active", true})
+  |> Selecto.select(select([id, name, email, country]))
+  |> Selecto.filter(where(active == true))
   |> Selecto.limit(25)
 
 cross_domain_union_query =
@@ -326,11 +341,13 @@ SetOpsLab.Helpers.run(
 Compare execution timing for `UNION` and `UNION ALL` over repeated runs.
 
 ```elixir
+import Selecto.ExprMacros
+
 build_base_cohorts = fn ->
   employees_with_manager_local =
     Selecto.configure(config.employee_domain, config.repo)
-    |> Selecto.select(["id", "first_name", "last_name", "title"])
-    |> Selecto.filter({"manager_id", :not_null})
+    |> Selecto.select(select([id, first_name, last_name, title]))
+    |> Selecto.filter(where(not is_nil(manager_id)))
 
   employees_with_direct_reports_local =
     Selecto.configure(config.employee_domain, config.repo)
@@ -341,9 +358,9 @@ build_base_cohorts = fn ->
       related_key: :manager_id,
       fields: %{id: %{type: :integer}}
     )
-    |> Selecto.filter({"direct_report.id", :not_null})
-    |> Selecto.select(["id", "first_name", "last_name", "title"])
-    |> Selecto.group_by(["id", "first_name", "last_name", "title"])
+    |> Selecto.filter(where(not is_nil(direct_report.id)))
+    |> Selecto.select(select([id, first_name, last_name, title]))
+    |> Selecto.group_by(group_by([id, first_name, last_name, title]))
 
   {
     Selecto.union(employees_with_manager_local, employees_with_direct_reports_local),
@@ -384,30 +401,32 @@ benchmark.("UNION ALL (non-deduplicating)", bench_union_all_query, 6)
 Build cohorts through CTEs first, then combine them with set operations.
 
 ```elixir
+import Selecto.ExprMacros
+
 staged_has_manager_query =
   Selecto.configure(config.employee_domain, config.repo)
   |> Selecto.with_cte("has_manager_ids", fn ->
     Selecto.configure(config.employee_domain, config.repo)
-    |> Selecto.select(["id"])
-    |> Selecto.filter({"manager_id", :not_null})
+    |> Selecto.select(select([id]))
+    |> Selecto.filter(where(not is_nil(manager_id)))
   end,
   columns: ["id"],
   join: [type: :inner, owner_key: :id, related_key: :id, fields: :infer]
   )
-  |> Selecto.select(["id", "first_name", "last_name", "title"])
+  |> Selecto.select(select([id, first_name, last_name, title]))
 
 staged_is_manager_query =
   Selecto.configure(config.employee_domain, config.repo)
   |> Selecto.with_cte("manager_ids", fn ->
     Selecto.configure(config.employee_domain, config.repo)
-    |> Selecto.select(["manager_id"])
-    |> Selecto.filter({"manager_id", :not_null})
-    |> Selecto.group_by(["manager_id"])
+    |> Selecto.select(select([manager_id]))
+    |> Selecto.filter(where(not is_nil(manager_id)))
+    |> Selecto.group_by(group_by([manager_id]))
   end,
   columns: ["id"],
   join: [type: :inner, owner_key: :id, related_key: :id, fields: :infer]
   )
-  |> Selecto.select(["id", "first_name", "last_name", "title"])
+  |> Selecto.select(select([id, first_name, last_name, title]))
 
 staged_intersection_query =
   Selecto.intersect(staged_has_manager_query, staged_is_manager_query)

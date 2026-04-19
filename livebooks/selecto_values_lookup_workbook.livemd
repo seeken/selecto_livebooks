@@ -209,11 +209,24 @@ defmodule ValuesLab.Helpers do
 end
 ```
 
+## Setup 4) Current Expression DSL Imports
+
+This workbook keeps the `with_values/3` configuration explicit, but now uses the
+current expression DSL for the surrounding select, filter, and order steps.
+
+```elixir
+import Selecto.ExprMacros
+
+:ok
+```
+
 ## 1) Basic Inline Status Label Mapping
 
 Define a small status-to-label table inline and join it to orders.
 
 ```elixir
+import Selecto.ExprMacros
+
 status_lookup_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.with_values(
@@ -234,8 +247,8 @@ status_lookup_query =
       }
     ]
   )
-  |> Selecto.select(["order_number", "status", "status_labels.status_label", "total"])
-  |> Selecto.order_by({"total", :desc})
+  |> Selecto.select(select([order_number, status, status_labels.status_label, total]))
+  |> Selecto.order_by(order_by([desc(total)]))
   |> Selecto.limit(15)
 
 ValuesLab.Helpers.run("Inline status labels", status_lookup_query)
@@ -246,6 +259,8 @@ ValuesLab.Helpers.run("Inline status labels", status_lookup_query)
 Provide values as maps and let Selecto infer the columns.
 
 ```elixir
+import Selecto.ExprMacros
+
 status_priority_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.with_values(
@@ -266,14 +281,8 @@ status_priority_query =
       }
     ]
   )
-  |> Selecto.select([
-    "order_number",
-    "status",
-    "status_priority.priority_rank",
-    "status_priority.customer_label",
-    "total"
-  ])
-  |> Selecto.order_by({"status_priority.priority_rank", :asc})
+  |> Selecto.select(select([order_number, status, status_priority.priority_rank, status_priority.customer_label, total]))
+  |> Selecto.order_by(order_by([asc(status_priority.priority_rank)]))
   |> Selecto.limit(15)
 
 ValuesLab.Helpers.run("Map-row VALUES with inferred columns", status_priority_query)
@@ -284,6 +293,8 @@ ValuesLab.Helpers.run("Map-row VALUES with inferred columns", status_priority_qu
 Create an inline table that classifies shipping countries into coarse geographic buckets.
 
 ```elixir
+import Selecto.ExprMacros
+
 region_lookup_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.with_values(
@@ -306,13 +317,8 @@ region_lookup_query =
       }
     ]
   )
-  |> Selecto.select([
-    "order_number",
-    "shipping_country",
-    "country_region_map.region_bucket",
-    "total"
-  ])
-  |> Selecto.order_by({"total", :desc})
+  |> Selecto.select(select([order_number, shipping_country, country_region_map.region_bucket, total]))
+  |> Selecto.order_by(order_by([desc(total)]))
   |> Selecto.limit(20)
 
 ValuesLab.Helpers.run("Inline country-region lookup", region_lookup_query)
@@ -340,12 +346,14 @@ end)
 Build a high-value-order CTE, then enrich those rows with inline status-group metadata.
 
 ```elixir
+import Selecto.ExprMacros
+
 staged_lookup_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.with_cte("high_value_orders", fn ->
     Selecto.configure(config.order_domain, config.repo)
-    |> Selecto.select(["id", "status", "total"])
-    |> Selecto.filter({"total", {:>=, 150}})
+    |> Selecto.select(select([id, status, total]))
+    |> Selecto.filter(where(total >= 150))
   end,
   columns: ["id", "status", "total"],
   join: [type: :inner, owner_key: :id, related_key: :id, fields: :infer]
@@ -368,13 +376,8 @@ staged_lookup_query =
       }
     ]
   )
-  |> Selecto.select([
-    "order_number",
-    "status",
-    "status_group_lookup.status_group",
-    "high_value_orders.total"
-  ])
-  |> Selecto.order_by({"high_value_orders.total", :desc})
+  |> Selecto.select(select([order_number, status, status_group_lookup.status_group, high_value_orders.total]))
+  |> Selecto.order_by(order_by([desc(high_value_orders.total)]))
   |> Selecto.limit(15)
 
 ValuesLab.Helpers.run("CTE + VALUES staged lookup", staged_lookup_query, 10)
@@ -385,6 +388,8 @@ ValuesLab.Helpers.run("CTE + VALUES staged lookup", staged_lookup_query, 10)
 Inline lookup rank controls display order first, then monetary value breaks ties.
 
 ```elixir
+import Selecto.ExprMacros
+
 priority_scored_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.with_values(
@@ -405,15 +410,9 @@ priority_scored_query =
       }
     ]
   )
-  |> Selecto.select([
-    "order_number",
-    "status",
-    "status_business_priority.business_rank",
-    "status_business_priority.board_bucket",
-    "total"
-  ])
-  |> Selecto.order_by({"status_business_priority.business_rank", :asc})
-  |> Selecto.order_by({"total", :desc})
+  |> Selecto.select(select([order_number, status, status_business_priority.business_rank, status_business_priority.board_bucket, total]))
+  |> Selecto.order_by(order_by([asc(status_business_priority.business_rank)]))
+  |> Selecto.order_by(order_by([desc(total)]))
   |> Selecto.limit(20)
 
 ValuesLab.Helpers.run("Business-priority ordering via VALUES", priority_scored_query, 10)
@@ -462,14 +461,16 @@ ValuesLab.Helpers.run_shape("Shaped VALUES lookup output", shaped_lookup_query, 
 Swap lookup rows by environment/version while keeping query structure unchanged.
 
 ```elixir
+import Selecto.ExprMacros
+
 lookup_version = System.get_env("VALUES_LOOKUP_VERSION", "v1")
 status_lookup_meta = ValuesLab.Helpers.status_lookup_meta(lookup_version)
 
 versioned_lookup_query =
   Selecto.configure(config.order_domain, config.repo)
   |> ValuesLab.Helpers.with_lookup(status_lookup_meta)
-  |> Selecto.select(["order_number", "status", "status_labels.status_label", "total"])
-  |> Selecto.order_by({"total", :desc})
+  |> Selecto.select(select([order_number, status, status_labels.status_label, total]))
+  |> Selecto.order_by(order_by([desc(total)]))
   |> Selecto.limit(10)
 
 ValuesLab.Helpers.run("Versioned inline lookup (#{lookup_version})", versioned_lookup_query, 10)
@@ -480,6 +481,8 @@ ValuesLab.Helpers.run("Versioned inline lookup (#{lookup_version})", versioned_l
 Compare behavior using a persisted lookup table (`livebook_status_lookup`) with the same mapping.
 
 ```elixir
+import Selecto.ExprMacros
+
 status_rows = ValuesLab.Helpers.status_lookup_meta("v1").rows
 
 Ecto.Adapters.SQL.query!(
@@ -508,8 +511,8 @@ end)
 values_lookup_compare_query =
   Selecto.configure(config.order_domain, config.repo)
   |> ValuesLab.Helpers.with_lookup(ValuesLab.Helpers.status_lookup_meta("v1"))
-  |> Selecto.select(["order_number", "status", "status_labels.status_label", "total"])
-  |> Selecto.order_by({"total", :desc})
+  |> Selecto.select(select([order_number, status, status_labels.status_label, total]))
+  |> Selecto.order_by(order_by([desc(total)]))
   |> Selecto.limit(10)
 
 persisted_lookup_query =
@@ -524,8 +527,8 @@ persisted_lookup_query =
       status_label: %{type: :string}
     }
   )
-  |> Selecto.select(["order_number", "status", "livebook_status_lookup.status_label", "total"])
-  |> Selecto.order_by({"total", :desc})
+  |> Selecto.select(select([order_number, status, livebook_status_lookup.status_label, total]))
+  |> Selecto.order_by(order_by([desc(total)]))
   |> Selecto.limit(10)
 
 ValuesLab.Helpers.explain("VALUES lookup", values_lookup_compare_query)
