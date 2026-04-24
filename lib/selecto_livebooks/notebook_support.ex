@@ -65,9 +65,19 @@ defmodule SelectoLivebooks.NotebookSupport do
   Starts the shared repo unless it is already running.
   """
   def ensure_repo_started do
+    config = repo_config()
+    Application.put_env(:selecto_livebooks, Repo, config)
+
     case Process.whereis(Repo) do
-      nil -> Repo.start_link(repo_config())
-      pid -> {:ok, pid}
+      nil ->
+        Repo.start_link(config)
+
+      pid ->
+        if repo_configured?(config) do
+          {:ok, pid}
+        else
+          restart_repo(config)
+        end
     end
   end
 
@@ -169,4 +179,45 @@ defmodule SelectoLivebooks.NotebookSupport do
 
   defp print_check(name, true), do: IO.puts("  [PASS] #{name}")
   defp print_check(name, false), do: IO.puts("  [FAIL] #{name}")
+
+  defp repo_configured?(expected_config) do
+    current_config = Repo.config()
+
+    Enum.all?([:database, :username, :hostname, :port], fn key ->
+      Keyword.get(current_config, key) == Keyword.get(expected_config, key)
+    end)
+  end
+
+  defp restart_repo(config) do
+    case Process.whereis(SelectoLivebooks.Supervisor) do
+      nil ->
+        stop_repo_process()
+        Repo.start_link(config)
+
+      _pid ->
+        restart_supervised_repo(config)
+    end
+  end
+
+  defp stop_repo_process do
+    case Process.whereis(Repo) do
+      nil -> :ok
+      pid -> GenServer.stop(pid, :normal, 5_000)
+    end
+  end
+
+  defp restart_supervised_repo(config) do
+    case Supervisor.terminate_child(SelectoLivebooks.Supervisor, Repo) do
+      :ok ->
+        case Supervisor.restart_child(SelectoLivebooks.Supervisor, Repo) do
+          {:ok, pid} -> {:ok, pid}
+          {:ok, pid, _info} -> {:ok, pid}
+          {:error, _reason} -> Repo.start_link(config)
+        end
+
+      {:error, _reason} ->
+        stop_repo_process()
+        Repo.start_link(config)
+    end
+  end
 end

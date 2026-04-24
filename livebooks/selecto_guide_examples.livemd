@@ -3144,6 +3144,167 @@ Expected output checks (Hierarchical Join Types + Runtime):
 * Adjacency runtime query emits `WITH RECURSIVE ...` and returns rows (or prints a compatibility note when running against an older `selecto` build)
 * `:materialized_path` and `:closure_table` metadata can be previewed without adding `manager_path` / `employee_closure` schema objects to the sample DB
 
+## Section 41: Tenant Scope Helpers on Read Queries
+
+This section focuses on Selecto's read-side tenant helpers. It uses the existing `customer_id` column as the tenant field so the generated query remains runnable against the sample dataset.
+
+### Attach Tenant Context, Apply Required Filters, and Validate Scope
+
+Business question: How can a query enforce a required tenant/customer scope before it executes?
+
+```elixir
+tenant_domain =
+  config.order_domain
+  |> Map.put(:tenant_required, true)
+
+tenant_query =
+  Selecto.configure(tenant_domain, config.repo)
+  |> Selecto.with_tenant(%{
+    tenant_id: 1,
+    tenant_field: "customer_id",
+    required: true,
+    prefix: "tenant_customer_1"
+  })
+  |> Selecto.apply_tenant_scope()
+  |> Selecto.select(["order_number", "customer.name", "total"])
+  |> Selecto.filter({"status", "delivered"})
+  |> Selecto.order_by({"total", :desc})
+  |> Selecto.limit(5)
+
+IO.inspect(Selecto.tenant(tenant_query), label: "Tenant context")
+IO.inspect(Selecto.required_filters(tenant_query), label: "Required filters")
+IO.inspect(Selecto.tenant_required?(tenant_query), label: "Tenant required?")
+IO.inspect(Selecto.validate_tenant_scope(tenant_query), label: "Scope validation")
+IO.inspect(Selecto.Tenant.merge_execution_opts(tenant_query), label: "Execution opts with prefix")
+
+case SelectoLivebooks.LivebookHelpers.execute_with_checks(tenant_query, example: "Tenant-Scoped Query") do
+  {:ok, {rows, columns, _aliases}} ->
+    IO.puts("Columns: #{inspect(columns)}")
+    Enum.each(rows, &IO.inspect/1)
+
+  {:error, error} ->
+    IO.puts("Execution error: #{inspect(error)}")
+end
+```
+
+### Fail Fast When Required Scope Is Missing
+
+Business question: What happens if a tenant-required domain reaches execution planning without a tenant filter?
+
+```elixir
+missing_scope_query =
+  Selecto.configure(tenant_domain, config.repo)
+  |> Selecto.select(["order_number", "total"])
+  |> Selecto.limit(3)
+
+IO.inspect(Selecto.validate_tenant_scope(missing_scope_query), label: "Missing scope validation")
+
+try do
+  Selecto.ensure_tenant_scope!(missing_scope_query)
+rescue
+  error ->
+    IO.puts("Expected tenant-scope failure:")
+    IO.puts(Exception.message(error))
+end
+```
+
+Expected output checks (Tenant Scope Helpers):
+
+* `Selecto.with_tenant/2` stores normalized tenant context on the query
+* `Selecto.apply_tenant_scope/1` adds `{"customer_id", 1}` to required filters
+* `Selecto.validate_tenant_scope/1` returns `:ok` only after required scope is present
+* `Selecto.Tenant.merge_execution_opts/2` carries tenant prefix metadata into execution opts when no explicit prefix is supplied
+
+## Section 42: UDF-Backed Expressions and Table Functions
+
+This section focuses on registering database functions in the domain and calling them from Selecto expressions. It uses PostgreSQL built-ins (`lower/1` and `generate_series/2`) so the examples do not require custom database extensions.
+
+### Scalar UDF in `select/2` and `order_by/2`
+
+Business question: How can a domain expose a vetted SQL function without embedding raw fragments in every query?
+
+```elixir
+udf_domain =
+  config.product_domain
+  |> Map.put(:functions, %{
+    "lower_text" => %{
+      kind: :scalar,
+      sql_name: "lower",
+      args: [%{name: :value, type: :string, source: :selector}],
+      returns: :string,
+      allowed_in: [:select, :order_by]
+    },
+    "series" => %{
+      kind: :table,
+      sql_name: "generate_series",
+      args: [
+        %{name: :start, type: :integer, source: :value},
+        %{name: :stop, type: :integer, source: :value}
+      ],
+      returns: %{columns: %{value: %{type: :integer}}},
+      allowed_in: [:lateral, :query_member]
+    }
+  })
+
+udf_query =
+  Selecto.configure(udf_domain, config.repo)
+  |> Selecto.select([
+    Selecto.Expr.as(Selecto.udf("lower_text", ["name"]), "normalized_name"),
+    "sku",
+    "price"
+  ])
+  |> Selecto.order_by([Selecto.Expr.as(Selecto.udf("lower_text", ["name"]), "normalized_name")])
+  |> Selecto.limit(5)
+
+{udf_sql, udf_params} = Selecto.to_sql(udf_query)
+IO.puts(udf_sql)
+IO.puts("params: #{inspect(udf_params)}")
+
+case SelectoLivebooks.LivebookHelpers.execute_with_checks(udf_query, example: "Scalar UDF Query") do
+  {:ok, {rows, columns, _aliases}} ->
+    IO.puts("Columns: #{inspect(columns)}")
+    Enum.each(rows, &IO.inspect/1)
+
+  {:error, error} ->
+    IO.puts("Execution error: #{inspect(error)}")
+end
+```
+
+### Table UDF as a LATERAL Source
+
+Business question: How can a table-valued function contribute columns to a query?
+
+```elixir
+table_udf_query =
+  Selecto.configure(udf_domain, config.repo)
+  |> Selecto.with_lateral(Selecto.udf_table("series", [1, 3]),
+    as: "stock_bucket",
+    join_type: :left
+  )
+  |> Selecto.select(["name", "sku", "stock_bucket.value"])
+  |> Selecto.filter({"active", true})
+  |> Selecto.limit(5)
+
+{table_udf_sql, table_udf_params} = Selecto.to_sql(table_udf_query)
+IO.puts(table_udf_sql)
+IO.puts("params: #{inspect(table_udf_params)}")
+
+case SelectoLivebooks.LivebookHelpers.execute_with_checks(table_udf_query, example: "Table UDF LATERAL Query") do
+  {:ok, {rows, columns, _aliases}} ->
+    IO.puts("Columns: #{inspect(columns)}")
+    Enum.each(rows, &IO.inspect/1)
+
+  {:error, error} ->
+    IO.puts("Execution error: #{inspect(error)}")
+end
+```
+
+Expected output checks (UDF Examples):
+
+* Scalar UDF calls compile to `lower(selecto_root.name)` while preserving Selecto-managed selectors and aliases
+* Table UDF calls compile to `JOIN LATERAL generate_series($1, $2)` and expose `stock_bucket.value`
+* Value arguments to table UDFs are parameterized (`[1, 3]`) rather than interpolated into SQL text
+
 ## Conclusion
 
 This Livebook has demonstrated the core features of Selecto:
@@ -3188,5 +3349,7 @@ This Livebook has demonstrated the core features of Selecto:
 38. **Subfilter Module Preview** - Inspect experimental subfilter components
 39. **Join Syntax Comparison** - Compare regular, star, and snowflake SQL side-by-side
 40. **Hierarchical Join Type Examples** - Compare adjacency-list, materialized-path, and closure-table join metadata
+41. **Tenant Scope Helpers** - Attach, apply, and validate required tenant filters on read queries
+42. **UDF Examples** - Register scalar and table-valued functions for Selecto-managed SQL generation
 
 For more advanced feature updates, follow the `selecto` repository directly.

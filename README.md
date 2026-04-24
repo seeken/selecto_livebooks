@@ -75,6 +75,10 @@ Focused Selecto workbooks:
   fail-fast scope validation).
 - Group-by workbook includes PostgreSQL ROLLUP ordering compatibility notes,
   including PG18+ behavior where rollup compatibility wrapping can be disabled.
+- Guide examples include read-side tenant scope helpers and UDF-backed scalar /
+  table-function query patterns.
+- Tests now parse every Elixir Livebook cell and assert the local
+  `selecto_updato` sibling path is used when the full workspace is present.
 
 Dependency requirement bumps are intentionally deferred until notebook behavior
 is re-validated end-to-end in your environment.
