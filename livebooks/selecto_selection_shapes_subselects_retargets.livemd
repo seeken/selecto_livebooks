@@ -63,7 +63,7 @@ This cell starts the shared sample-app repo and loads the maintained order
 domain from `selecto_livebooks`.
 
 ```elixir
-config = SelectoLivebooks.NotebookSupport.config([:order_domain])
+config = SelectoLivebooks.NotebookSupport.config([:order_domain, :customer_domain])
 order_count = SelectoLivebooks.NotebookSupport.table_counts(["orders"])["orders"]
 
 IO.puts("Connected. Orders in dataset: #{order_count}")
@@ -83,6 +83,10 @@ defmodule SelectionFocus.Helpers do
 
   def run(label, query, opts \\ []) do
     Selecto.Livebook.run(label, query, Keyword.put_new(opts, :preview_count, 5))
+  end
+
+  def run_shape(label, query, opts \\ []) do
+    Selecto.Livebook.run_shape(label, query, Keyword.put_new(opts, :preview_count, 5))
   end
 end
 ```
@@ -304,8 +308,8 @@ end)
 
 ## 3.1) Subselect Format Matrix
 
-This cell compares the four built-in subselect aggregation formats:
-`:json_agg`, `:array_agg`, `:string_agg`, and `:count`.
+This cell compares subselect aggregation formats that fit the numeric
+`order_items` sample fields: `:json_agg`, `:array_agg`, and `:count`.
 
 ```elixir
 import Selecto.ExprMacros
@@ -313,7 +317,6 @@ import Selecto.ExprMacros
 subselect_formats = [
   {"json_agg", %{fields: ["quantity", "line_total"], target_schema: :order_items, format: :json_agg, alias: "line_items_json"}},
   {"array_agg", %{fields: ["quantity"], target_schema: :order_items, format: :array_agg, alias: "quantities_array"}},
-  {"string_agg", %{fields: ["quantity"], target_schema: :order_items, format: :string_agg, alias: "quantities_csv", separator: ", "}},
   {"count", %{fields: ["id"], target_schema: :order_items, format: :count, alias: "line_item_count"}}
 ]
 
@@ -439,14 +442,15 @@ end)
 :ok
 ```
 
-## 4.1) Retarget Strategy Comparison (`:in`, `:exists`, `:join`)
+## 4.1) Retarget Strategy Comparison (`:in`, `:exists`)
 
-This cell compares generated SQL and row counts across supported retarget subquery strategies.
+This cell compares generated SQL and row counts across the retarget subquery
+strategies that preserve the pre-retarget filter in this query shape.
 
 ```elixir
 import Selecto.ExprMacros
 
-Enum.each([:in, :exists, :join], fn strategy ->
+Enum.each([:in, :exists], fn strategy ->
   query =
     Selecto.configure(config.order_domain, config.repo)
     |> Selecto.filter(where(status == "delivered"))
@@ -524,8 +528,207 @@ end
 :ok
 ```
 
+## 10) Compare Pre- and Post-Retarget Filters
+
+This cell turns the earlier retarget variants into a compact SQL comparison
+table.
+
+```elixir
+retarget_filter_comparison =
+  [
+    {"pre only", retarget_pre_filter_query},
+    {"pre + post", retarget_pre_and_post_filter_query},
+    {"post only", retarget_post_only_query}
+  ]
+  |> Enum.map(fn {label, query} ->
+    {sql, params} = Selecto.to_sql(query)
+
+    %{
+      label: label,
+      contains_status: String.contains?(String.downcase(sql), "status"),
+      contains_quantity: String.contains?(String.downcase(sql), "quantity"),
+      params: inspect(params),
+      sql: Selecto.format_sql(sql)
+    }
+  end)
+
+Kino.DataTable.new(retarget_filter_comparison)
+```
+
+## 11) Replace Explicit Subselects with Nested Shapes
+
+For consumers that only need structured row output, `select_shape/2` can replace
+some explicit subselect payloads.
+
+```elixir
+nested_shape_replacement_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select(select([order_number, status, total, customer.name]))
+  |> Selecto.select_shape([
+    "order_number",
+    {"status", "total"},
+    "customer.name"
+  ])
+  |> Selecto.order_by(order_by([desc(total)]))
+  |> Selecto.limit(10)
+
+SelectionFocus.Helpers.run_shape("Nested shape replacement", nested_shape_replacement_query)
+```
+
+## 12) Execute Versus Execute Shape
+
+Run the same logical query through both execution paths to see the raw rows and
+the shaped rows side by side.
+
+```elixir
+shape_compare_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select(select([order_number, status, total]))
+  |> Selecto.select_shape(["order_number", {"status", "total"}])
+  |> Selecto.order_by(order_by([desc(total)]))
+  |> Selecto.limit(5)
+
+{:ok, {raw_rows, raw_columns, _aliases}} = Selecto.execute(shape_compare_query)
+{:ok, shaped_rows} = Selecto.execute_shape(shape_compare_query)
+
+[
+  %{
+    path: "execute/2",
+    columns: inspect(raw_columns),
+    sample: inspect(raw_rows, limit: 5)
+  },
+  %{
+    path: "execute_shape/2",
+    columns: "shape",
+    sample: inspect(shaped_rows, limit: 5)
+  }
+]
+|> Kino.DataTable.new()
+```
+
+## 13) Shape Output vs API DTO Maps
+
+Compare `select_shape/2` output with an equivalent map-based API payload.
+
+```elixir
+dto_shape_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select(select([order_number, status, total]))
+  |> Selecto.select_shape(["order_number", {"status", "total"}])
+  |> Selecto.order_by(order_by([desc(total)]))
+  |> Selecto.limit(5)
+
+{:ok, dto_shape_rows} = Selecto.execute_shape(dto_shape_query)
+
+dto_map_rows =
+  Enum.map(dto_shape_rows, fn [order_number, {status, total}] ->
+    %{order_number: order_number, status_summary: %{status: status, total: total}}
+  end)
+
+[
+  %{format: "select_shape/2", sample: inspect(dto_shape_rows, limit: :infinity)},
+  %{format: "API DTO maps", sample: inspect(dto_map_rows, limit: :infinity)}
+]
+|> Kino.DataTable.new()
+```
+
+## 14) Retarget with Multiple Preserved Constraints
+
+Join-derived business rules can be normalized to root keys before retargeting,
+then preserved as part of the pre-retarget constraint.
+
+```elixir
+vip_customer_ids_query =
+  Selecto.configure(config.customer_domain, config.repo)
+  |> Selecto.select(select([id]))
+  |> Selecto.filter(where(tier == "vip"))
+
+{:ok, {vip_customer_id_rows, _columns, _aliases}} = Selecto.execute(vip_customer_ids_query)
+vip_customer_ids = List.flatten(vip_customer_id_rows)
+
+multi_preserved_retarget_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.filter(where(status == "delivered"))
+  |> Selecto.filter(where(customer_id in ^vip_customer_ids))
+  |> Selecto.retarget(:order_items, subquery_strategy: :exists)
+  |> Selecto.select(select([as(order_items.product_id, "product_id"), as(order_items.quantity, "quantity")]))
+  |> Selecto.limit(10)
+
+SelectionFocus.Helpers.explain("Retarget with multiple preserved constraints", multi_preserved_retarget_query)
+```
+
+## 15) Challenge: Subselect Payload to Shaped Payload
+
+Convert an explicit subselect-style result into a shaped row payload when the
+consumer only needs nested structure.
+
+```elixir
+challenge_shape_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select(select([order_number, customer.name, total]))
+  |> Selecto.select_shape(["order_number", {"customer.name", "total"}])
+  |> Selecto.order_by(order_by([desc(total)]))
+  |> Selecto.limit(6)
+
+{:ok, challenge_shaped_rows} =
+  SelectionFocus.Helpers.run_shape("Challenge shaped customer payload", challenge_shape_query)
+
+Enum.map(challenge_shaped_rows, fn [order_number, {customer_name, total}] ->
+  %{order_number: order_number, customer: %{name: customer_name}, total: total}
+end)
+```
+
+## 16) DTO Helper for Common Shape Rows
+
+Package a common shaped-row conversion behind a small helper function.
+
+```elixir
+shape_to_order_dto = fn [order_number, {status, total}] ->
+  %{order_number: order_number, status_summary: %{status: status, total: total}}
+end
+
+Enum.map(dto_shape_rows, shape_to_order_dto)
+```
+
+## 17) Normalize Join Filters Before Retargeting
+
+Resolve join-based filter choices to root keys before retargeting.
+
+```elixir
+join_filter_request = %{customer_tier: "vip", status: "delivered"}
+
+{:ok, {normalized_customer_rows, _columns, _aliases}} =
+  Selecto.configure(config.customer_domain, config.repo)
+  |> Selecto.select(select([id]))
+  |> Selecto.filter(where(tier == ^join_filter_request.customer_tier))
+  |> Selecto.execute()
+
+normalized_root_filters = %{
+  status: join_filter_request.status,
+  customer_ids: List.flatten(normalized_customer_rows)
+}
+
+normalized_root_filters
+```
+
+## 18) Shape or Subselect Decision Challenge
+
+Choose between shapes and subselects based on the target API contract.
+
+```elixir
+api_contracts = [
+  %{contract: "flat order summary", recommended: "select/2", reason: "no nested payload needed"},
+  %{contract: "nested customer summary", recommended: "select_shape/2", reason: "fixed nested row structure"},
+  %{contract: "order with variable line item list", recommended: "subselect/3", reason: "child collection cardinality varies"}
+]
+
+Kino.DataTable.new(api_contracts)
+```
+
 ## Next Steps
 
-* Try adding filters before and after retarget to compare generated SQL.
-* Try replacing explicit `subselect/3` with `select_shape/2` nested containers.
-* Compare `Selecto.execute/2` with `Selecto.execute_shape/2` for the same logical query.
+To extend this workbook further, add:
+
+* Add named helper modules for DTO conversions used across notebooks.
+* Add an executable retarget query from normalized root filters once list predicates preserve correctly.
+* Add side-by-side output examples for each API contract recommendation.

@@ -154,6 +154,21 @@ defmodule CaseLab.Helpers do
         failure
     end
   end
+
+  def run_shape(label, query, preview_count \\ 10) do
+    explain(label, query)
+
+    case Selecto.execute_shape(query) do
+      {:ok, rows} = ok ->
+        IO.puts("Rows: #{length(rows)}")
+        IO.inspect(Enum.take(rows, preview_count), label: "Preview (up to #{preview_count} shaped rows)")
+        ok
+
+      {:error, error} = failure ->
+        IO.puts("Error: #{inspect(error)}")
+        failure
+    end
+  end
 end
 ```
 
@@ -254,10 +269,259 @@ end)
 :ok
 ```
 
+## 6) CASE Buckets with Window Ranking
+
+CASE-derived labels can sit beside analytical window columns for ranked
+reporting.
+
+```elixir
+case_window_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select(["order_number", "status", "total"])
+  |> Selecto.case_when_select([
+    {[{"total", {:>=, 500}}], "enterprise"},
+    {[{"total", {:>=, 200}}], "growth"},
+    {[{"total", {:>=, 75}}], "standard"}
+  ], else: "starter", as: "value_bucket")
+  |> Selecto.window_function(:row_number, [],
+    over: [partition_by: ["status"], order_by: [{"total", :desc}]],
+    as: "status_value_rank"
+  )
+  |> Selecto.order_by({"status", :asc})
+  |> Selecto.order_by({"total", :desc})
+  |> Selecto.limit(20)
+
+CaseLab.Helpers.run("CASE bucket with status ranking", case_window_query, 10)
+```
+
+## 7) Aggregate by CASE-Derived Tier
+
+Use the same tier boundaries in a grouped report to move from row labeling to
+summary analysis.
+
+```elixir
+tiered_order_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.case_when_select([
+    {[{"total", {:>=, 500}}], "enterprise"},
+    {[{"total", {:>=, 200}}], "growth"},
+    {[{"total", {:>=, 75}}], "standard"}
+  ], else: "starter", as: "value_bucket")
+  |> Selecto.select([
+    {:field, {:raw_sql, "COUNT(*)"}, "order_count"},
+    {:field, {:raw_sql, "SUM(selecto_root.total)"}, "gross_total"}
+  ])
+  |> Selecto.group_by([{:raw_sql, "value_bucket"}])
+
+CaseLab.Helpers.run("Aggregate by CASE-derived tier", tiered_order_query, 10)
+```
+
+## 8) Nested CASE Output Shape
+
+`select_shape/2` can package ordinary fields and CASE aliases into nested
+containers for downstream UI or API consumption.
+
+```elixir
+case_shape_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select_shape([
+    "order_number",
+    {
+      "status",
+      {:field,
+       {:raw_sql,
+        "CASE selecto_root.status WHEN 'processing' THEN 'Open' WHEN 'shipped' THEN 'In Transit' WHEN 'delivered' THEN 'Closed' WHEN 'cancelled' THEN 'Closed' ELSE 'Other' END"},
+       "status_bucket"}
+    },
+    {
+      "total",
+      {:field,
+       {:raw_sql,
+        "CASE WHEN selecto_root.total >= 500 THEN 'enterprise' WHEN selecto_root.total >= 200 THEN 'growth' ELSE 'standard' END"},
+       "value_bucket"}
+    }
+  ])
+  |> Selecto.limit(8)
+
+CaseLab.Helpers.run_shape("Nested CASE shape", case_shape_query, 8)
+```
+
+## 9) Threshold Challenge Inputs
+
+Treat these threshold variables like values a Livebook input would provide, then
+feed them into a searched CASE expression.
+
+```elixir
+premium_threshold = Decimal.new("750")
+growth_threshold = Decimal.new("300")
+
+threshold_case_sql = """
+CASE
+  WHEN selecto_root.total >= #{premium_threshold} THEN 'premium'
+  WHEN selecto_root.total >= #{growth_threshold} THEN 'growth'
+  ELSE 'standard'
+END
+"""
+
+threshold_challenge_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select([
+    "order_number",
+    "total",
+    {:field, {:raw_sql, threshold_case_sql}, "challenge_bucket"}
+  ])
+  |> Selecto.order_by({"total", :desc})
+  |> Selecto.limit(12)
+
+CaseLab.Helpers.run("Threshold challenge buckets", threshold_challenge_query, 12)
+```
+
+## 10) Simple CASE vs Searched CASE
+
+Simple CASE compares one expression to fixed values. Searched CASE evaluates
+full predicates, which is better for ranges and compound rules.
+
+```elixir
+simple_case_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select([
+    "order_number",
+    "status",
+    {:field,
+     {:raw_sql,
+      "CASE selecto_root.status WHEN 'processing' THEN 'Open' WHEN 'shipped' THEN 'Moving' WHEN 'delivered' THEN 'Done' ELSE 'Exception' END"},
+     "simple_case_label"}
+  ])
+  |> Selecto.limit(6)
+
+searched_case_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select([
+    "order_number",
+    "total",
+    {:field,
+     {:raw_sql,
+      "CASE WHEN selecto_root.total >= 750 THEN 'premium' WHEN selecto_root.total >= 300 THEN 'growth' ELSE 'standard' END"},
+     "searched_case_label"}
+  ])
+  |> Selecto.order_by({"total", :desc})
+  |> Selecto.limit(6)
+
+CaseLab.Helpers.explain("Simple CASE SQL", simple_case_query)
+CaseLab.Helpers.explain("Searched CASE SQL", searched_case_query)
+```
+
+## 11) Order by CASE-Derived Business Priority
+
+Use CASE in `ORDER BY` to sort operational priority before ordinary tie-breakers.
+
+```elixir
+priority_order_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select([
+    "order_number",
+    "status",
+    "total",
+    {:field,
+     {:raw_sql,
+      "CASE selecto_root.status WHEN 'processing' THEN 1 WHEN 'shipped' THEN 2 WHEN 'delivered' THEN 3 ELSE 4 END"},
+     "business_priority"}
+  ])
+  |> Selecto.order_by({{:raw_sql, "CASE selecto_root.status WHEN 'processing' THEN 1 WHEN 'shipped' THEN 2 WHEN 'delivered' THEN 3 ELSE 4 END"}, :asc})
+  |> Selecto.order_by({"total", :desc})
+  |> Selecto.limit(12)
+
+CaseLab.Helpers.run("CASE-derived business priority", priority_order_query, 12)
+```
+
+## 12) Threshold Inputs with Kino Controls
+
+Use `Kino.Input` controls for interactive thresholds, with defaults that also
+run cleanly during unattended verification.
+
+```elixir
+premium_input = Kino.Input.number("Premium threshold", default: 750)
+growth_input = Kino.Input.number("Growth threshold", default: 300)
+
+read_input_or_default = fn input, default ->
+  try do
+    Kino.Input.read(input) || default
+  rescue
+    _ -> default
+  end
+end
+
+premium_threshold = read_input_or_default.(premium_input, 750)
+growth_threshold = read_input_or_default.(growth_input, 300)
+
+interactive_threshold_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select([
+    "order_number",
+    "total",
+    {:field,
+     {:raw_sql,
+      "CASE WHEN selecto_root.total >= #{premium_threshold} THEN 'premium' WHEN selecto_root.total >= #{growth_threshold} THEN 'growth' ELSE 'standard' END"},
+     "interactive_bucket"}
+  ])
+  |> Selecto.order_by({"total", :desc})
+  |> Selecto.limit(10)
+
+CaseLab.Helpers.run("Interactive threshold CASE", interactive_threshold_query, 10)
+```
+
+## 13) Nullable Date Buckets
+
+CASE expressions are a useful way to make nullable lifecycle dates explicit.
+
+```elixir
+nullable_date_bucket_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select([
+    "order_number",
+    "status",
+    {:field, {:raw_sql, "selecto_root.shipped_at"}, "shipped_at"},
+    {:field, {:raw_sql, "selecto_root.delivered_at"}, "delivered_at"},
+    {:field,
+     {:raw_sql,
+      "CASE WHEN selecto_root.shipped_at IS NULL THEN 'not shipped' WHEN selecto_root.delivered_at IS NULL THEN 'in transit' ELSE 'delivered' END"},
+     "date_bucket"}
+  ])
+  |> Selecto.order_by({"inserted_at", :desc})
+  |> Selecto.limit(12)
+
+CaseLab.Helpers.run("Nullable date CASE buckets", nullable_date_bucket_query, 12)
+```
+
+## 14) CASE Priority vs VALUES Lookup Priority
+
+Compare inline CASE ordering with a small VALUES lookup table for the same
+business priority.
+
+```elixir
+{:ok, priority_compare} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  WITH priority_lookup(status, priority_rank) AS (
+    VALUES ('processing', 1), ('shipped', 2), ('delivered', 3), ('cancelled', 4)
+  )
+  SELECT
+    orders.order_number,
+    orders.status,
+    CASE orders.status WHEN 'processing' THEN 1 WHEN 'shipped' THEN 2 WHEN 'delivered' THEN 3 ELSE 4 END AS case_rank,
+    priority_lookup.priority_rank AS values_rank
+  FROM orders
+  LEFT JOIN priority_lookup ON priority_lookup.status = orders.status
+  ORDER BY values_rank, orders.total DESC
+  LIMIT 12
+  """, [])
+
+priority_compare.rows
+```
+
 ## Next Steps
 
-To extend this workbook, add:
+To extend this workbook further, add:
 
-1. CASE expressions combined with window functions for ranked bucketing
-2. Aggregate reports grouped by CASE-derived tier fields
-3. `select_shape/2` projections with nested CASE outputs
+1. Add validation when interactive thresholds are reversed
+2. Add CASE examples for overdue shipment SLA buckets
+3. Convert the priority comparison into a reusable CASE-vs-lookup decision table

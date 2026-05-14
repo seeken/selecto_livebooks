@@ -339,7 +339,7 @@ json_existence_query =
   ])
   |> Selecto.json_filter([
     {:json_path_exists, "metadata", "$.promo_code"},
-    {:json_extract_text, "metadata", "$.warehouse.zone", {:=, "in_stock"}}
+    {:json_contains, "metadata", %{"warehouse" => %{"zone" => "in_stock"}}}
   ])
   |> Selecto.order_by(order_by([desc(price)]))
   |> Selecto.limit(10)
@@ -406,10 +406,232 @@ json_shaped_query =
 JsonLab.Helpers.run_shape("Shaped JSON projection", json_shaped_query, 10)
 ```
 
+## 9) JSON Aggregates by Price Band
+
+Aggregate JSON payloads for grouped reporting while using metadata-derived
+price bands as dimensions.
+
+```elixir
+json_category_agg_query =
+  Selecto.configure(config.product_domain, config.repo)
+  |> Selecto.select([
+    {:field, {:raw_sql, "metadata ->> 'price_band'"}, "price_band"},
+    {:field, {:raw_sql, "COUNT(*)"}, "product_count"},
+    {:field, {:raw_sql, "json_agg(selecto_root.name)"}, "product_names_json"},
+    {:field, {:raw_sql, "json_object_agg(selecto_root.sku, selecto_root.price)"}, "sku_price_json"}
+  ])
+  |> Selecto.group_by([{:raw_sql, "metadata ->> 'price_band'"}])
+  |> Selecto.order_by({{:count, "*"}, :desc})
+  |> Selecto.limit(10)
+
+JsonLab.Helpers.run("JSON aggregates by price band", json_category_agg_query, 10)
+```
+
+## 10) Ranked Metadata Cohorts
+
+Extract metadata, then add a window rank within the extracted cohort.
+
+```elixir
+json_window_query =
+  Selecto.configure(config.product_domain, config.repo)
+  |> Selecto.select([
+    "name",
+    "sku",
+    "price",
+    {:field, {:raw_sql, "metadata ->> 'price_band'"}, "price_band"},
+    {:field,
+     {:raw_sql,
+      "ROW_NUMBER() OVER (PARTITION BY metadata ->> 'price_band' ORDER BY selecto_root.price DESC)"},
+     "price_band_rank"}
+  ])
+  |> Selecto.order_by({{:raw_sql, "metadata ->> 'price_band'"}, :asc})
+  |> Selecto.order_by({"price", :desc})
+  |> Selecto.limit(30)
+
+JsonLab.Helpers.run("JSON metadata cohort ranking", json_window_query, 20)
+```
+
+## 11) Side-by-Side JSON and Relational Results
+
+Compare a JSON-extracted projection with ordinary relational fields in a compact
+Kino table.
+
+```elixir
+relational_compare_query =
+  Selecto.configure(config.product_domain, config.repo)
+  |> Selecto.select(select([name, sku, price, active]))
+  |> Selecto.order_by(order_by([desc(price)]))
+  |> Selecto.limit(10)
+
+{:ok, json_rows} = JsonLab.Helpers.run_shape("JSON side", json_shaped_query, 10)
+{:ok, {rel_rows, rel_columns, _aliases}} = Selecto.execute(relational_compare_query)
+
+comparison_rows =
+  Enum.zip(json_rows, rel_rows)
+  |> Enum.map(fn {json_row, rel_row} ->
+    relational_map = Enum.zip(rel_columns, rel_row) |> Map.new()
+
+    %{
+      product: relational_map["name"],
+      relational_active: relational_map["active"],
+      relational_price: relational_map["price"],
+      json_shape: inspect(json_row)
+    }
+  end)
+
+Kino.DataTable.new(comparison_rows)
+```
+
+## 12) Validated JSON Path Inputs
+
+Treat JSON paths as user input only after checking them against an allow-list.
+
+```elixir
+allowed_json_paths = %{
+  "price_band" => "$.price_band",
+  "warehouse_zone" => "$.warehouse.zone",
+  "secondary_flag" => "$.flags[1]"
+}
+
+requested_path_key = "warehouse_zone"
+
+case Map.fetch(allowed_json_paths, requested_path_key) do
+  {:ok, json_path} ->
+    validated_path_query =
+      Selecto.configure(config.product_domain, config.repo)
+      |> Selecto.select(select([name, sku]))
+      |> Selecto.json_select([{:json_extract_text, "metadata", json_path, as: requested_path_key}])
+      |> Selecto.limit(8)
+
+    JsonLab.Helpers.run("Validated JSON path input", validated_path_query, 8)
+
+  :error ->
+    IO.puts("Rejected unsupported JSON path key: #{requested_path_key}")
+end
+```
+
+## 13) Text Extraction vs Typed Numeric Casts
+
+JSON text extraction returns strings. Cast when downstream sorting or arithmetic
+needs numeric behavior.
+
+```elixir
+{:ok, cast_comparison} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  SELECT
+    name,
+    metadata ->> 'stock_snapshot' AS stock_snapshot_text,
+    (metadata ->> 'stock_snapshot')::integer AS stock_snapshot_int
+  FROM (
+    SELECT
+      name,
+      jsonb_set(metadata, '{stock_snapshot}', to_jsonb(stock_quantity), true) AS metadata
+    FROM products
+  ) enriched_products
+  ORDER BY stock_snapshot_int DESC
+  LIMIT 10
+  """, [])
+
+cast_comparison.rows
+```
+
+## 14) API-Ready Maps from JSON Aggregates
+
+Convert aggregate JSON rows into plain maps that are ready to return from an API
+or encode as JSON.
+
+```elixir
+{:ok, {aggregate_rows, aggregate_columns, _aliases}} = Selecto.execute(json_category_agg_query)
+
+api_ready_json_aggregates =
+  Enum.map(aggregate_rows, fn row ->
+    row_map = Enum.zip(aggregate_columns, row) |> Map.new()
+
+    %{
+      price_band: row_map["?column?"],
+      product_count: row_map["count"],
+      product_names: row_map["json_agg"],
+      sku_prices: row_map["json_object_agg"]
+    }
+  end)
+
+Jason.encode!(api_ready_json_aggregates)
+```
+
+## 15) JSON Path Select Input
+
+Connect the path allow-list to a `Kino.Input.select`, with a verification-safe
+fallback for non-interactive execution.
+
+```elixir
+path_options = Enum.map(Map.keys(allowed_json_paths), &{&1, &1})
+path_input = Kino.Input.select("JSON path", path_options, default: "price_band")
+
+selected_path_key =
+  try do
+    Kino.Input.read(path_input) || "price_band"
+  rescue
+    _ -> "price_band"
+  end
+
+selected_path_query =
+  Selecto.configure(config.product_domain, config.repo)
+  |> Selecto.select(select([name, sku]))
+  |> Selecto.json_select([{:json_extract_text, "metadata", allowed_json_paths[selected_path_key], as: selected_path_key}])
+  |> Selecto.limit(6)
+
+JsonLab.Helpers.run("Selected JSON path", selected_path_query, 6)
+```
+
+## 16) Typed JSON Casts for Dates and Booleans
+
+Cast JSON text into booleans and timestamps when downstream code needs typed
+comparison or sorting.
+
+```elixir
+{:ok, typed_cast_rows} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  SELECT
+    name,
+    (metadata -> 'flags' ? 'featured') AS featured_flag,
+    inserted_at,
+    to_jsonb(inserted_at)::text AS inserted_at_json_text
+  FROM products
+  ORDER BY inserted_at DESC
+  LIMIT 8
+  """, [])
+
+typed_cast_rows.rows
+```
+
+## 17) Merge Relational and JSON Aggregate Maps
+
+Combine relational totals with JSON aggregate payloads into API-style maps.
+
+```elixir
+{:ok, relational_status_totals} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  SELECT status, count(*) AS order_count, sum(total) AS gross_total
+  FROM orders
+  GROUP BY status
+  ORDER BY gross_total DESC
+  """, [])
+
+merged_api_maps = %{
+  order_statuses:
+    Enum.map(relational_status_totals.rows, fn [status, order_count, gross_total] ->
+      %{status: status, order_count: order_count, gross_total: gross_total}
+    end),
+  product_price_bands: api_ready_json_aggregates
+}
+
+Jason.encode!(merged_api_maps)
+```
+
 ## Next Steps
 
-To extend this workbook, add:
+To extend this workbook further, add:
 
-1. JSON aggregation examples (`json_agg`, `json_object_agg`) grouped by category or supplier
-2. A mixed JSON + window-function section for ranked metadata cohorts
-3. A compact Kino table section for side-by-side JSON and relational query result comparison
+1. Add JSON path controls that support nested array indexes.
+2. Add typed casts for decimal values stored inside JSON.
+3. Add response-shaping examples that include pagination metadata.

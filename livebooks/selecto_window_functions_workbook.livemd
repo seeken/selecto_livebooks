@@ -147,6 +147,10 @@ defmodule WindowLab.Helpers do
   def run(label, query, preview_count \\ 10) do
     Selecto.Livebook.run(label, query, preview_count: preview_count)
   end
+
+  def run_shape(label, query, preview_count \\ 10) do
+    Selecto.Livebook.run_shape(label, query, preview_count: preview_count)
+  end
 end
 ```
 
@@ -260,10 +264,273 @@ quartile_query =
 WindowLab.Helpers.run("Global salary quartiles", quartile_query)
 ```
 
+## 6) Percentiles and Moving Averages
+
+Window functions can express percentile-style buckets and moving averages while
+preserving employee rows.
+
+```elixir
+percentile_moving_average_query =
+  Selecto.configure(config.employee_domain, config.repo)
+  |> Selecto.filter({"active", true})
+  |> Selecto.select(["first_name", "last_name", "department", "salary", "hire_date"])
+  |> Selecto.window_function(:percent_rank, [],
+    over: [partition_by: ["department"], order_by: [{"salary", :asc}]],
+    as: "department_salary_percent_rank"
+  )
+  |> Selecto.window_function(:avg, ["salary"],
+    over: [
+      partition_by: ["department"],
+      order_by: [{"hire_date", :asc}],
+      frame: {:rows, {:preceding, 2}, :current_row}
+    ],
+    as: "three_hire_moving_avg_salary"
+  )
+  |> Selecto.order_by({"department", :asc})
+  |> Selecto.order_by({"hire_date", :asc})
+  |> Selecto.limit(30)
+
+WindowLab.Helpers.run("Percent rank and moving average", percentile_moving_average_query)
+```
+
+## 7) Structured Output with Window Columns
+
+Package row fields and analytic fields into a nested shape for dashboards or API
+payloads.
+
+```elixir
+window_shape_query =
+  Selecto.configure(config.employee_domain, config.repo)
+  |> Selecto.filter({"active", true})
+  |> Selecto.select_shape([
+    {"first_name", "last_name"},
+    "department",
+    {
+      "salary",
+      {:field,
+       {:raw_sql, "ROW_NUMBER() OVER (PARTITION BY selecto_root.department ORDER BY selecto_root.salary DESC)"},
+       "department_rank"}
+    }
+  ])
+  |> Selecto.order_by({"department", :asc})
+  |> Selecto.order_by({"salary", :desc})
+  |> Selecto.limit(20)
+
+WindowLab.Helpers.run_shape("Window output shape", window_shape_query)
+```
+
+## 8) Department and Tenure Dashboard Slice
+
+Compare top earners by department and a derived tenure bucket.
+
+```elixir
+tenure_dashboard_query =
+  Selecto.configure(config.employee_domain, config.repo)
+  |> Selecto.filter({"active", true})
+  |> Selecto.select(["first_name", "last_name", "department", "salary", "hire_date"])
+  |> Selecto.case_when_select([
+    {[{"hire_date", {:<, ~D[2019-01-01]}}], "senior tenure"},
+    {[{"hire_date", {:<, ~D[2023-01-01]}}], "mid tenure"}
+  ], else: "newer tenure", as: "tenure_bucket")
+  |> Selecto.window_function(:row_number, [],
+    over: [partition_by: ["department"], order_by: [{"salary", :desc}]],
+    as: "department_top_earner_rank"
+  )
+  |> Selecto.order_by({"department", :asc})
+  |> Selecto.order_by({"salary", :desc})
+  |> Selecto.limit(50)
+
+WindowLab.Helpers.run("Top earners by department and tenure", tenure_dashboard_query)
+```
+
+## 9) Row vs Range Frame Comparison
+
+Compare row-count frames with value-range frames for moving salary totals.
+
+```elixir
+{:ok, frame_comparison} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  SELECT
+    department,
+    first_name,
+    last_name,
+    salary,
+    sum(salary) OVER (
+      PARTITION BY department
+      ORDER BY salary
+      ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+    ) AS rows_frame_total,
+    sum(salary) OVER (
+      PARTITION BY department
+      ORDER BY salary
+      RANGE BETWEEN 10000 PRECEDING AND CURRENT ROW
+    ) AS range_frame_total
+  FROM employees
+  ORDER BY department, salary
+  LIMIT 25
+  """, [])
+
+frame_comparison.rows
+```
+
+## 10) CTE Pre-Aggregation with Window Functions
+
+Pre-aggregate each department, then apply a window rank to the summarized rows.
+
+```elixir
+{:ok, department_salary_rank} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  WITH department_summary AS (
+    SELECT department, count(*) AS employee_count, avg(salary) AS average_salary, sum(salary) AS total_salary
+    FROM employees
+    GROUP BY department
+  )
+  SELECT
+    department,
+    employee_count,
+    average_salary,
+    total_salary,
+    dense_rank() OVER (ORDER BY average_salary DESC) AS average_salary_rank
+  FROM department_summary
+  ORDER BY average_salary_rank, department
+  """, [])
+
+department_salary_rank.rows
+```
+
+## 11) Salary Distribution Chart Data by Department Rank
+
+Build a chart-ready dataset from department salary ranks. The cell returns a
+VegaLite-compatible spec and falls back to a table when VegaLite is unavailable.
+
+```elixir
+chart_values =
+  Enum.map(department_salary_rank.rows, fn [department, employee_count, average_salary, total_salary, rank] ->
+    %{
+      department: department,
+      employee_count: employee_count,
+      average_salary: Decimal.to_float(average_salary),
+      total_salary: Decimal.to_float(total_salary),
+      rank: rank
+    }
+  end)
+
+salary_rank_spec = %{
+  "$schema" => "https://vega.github.io/schema/vega-lite/v5.json",
+  "data" => %{"values" => chart_values},
+  "mark" => "bar",
+  "encoding" => %{
+    "x" => %{"field" => "department", "type" => "nominal", "sort" => "-y"},
+    "y" => %{"field" => "average_salary", "type" => "quantitative"},
+    "color" => %{"field" => "rank", "type" => "ordinal"}
+  }
+}
+
+if Code.ensure_loaded?(VegaLite) do
+  VegaLite.from_json(Jason.encode!(salary_rank_spec))
+else
+  Kino.DataTable.new(chart_values)
+end
+```
+
+## 12) Interactive Frame and Department Controls
+
+Use input-style values to change the moving frame size and department filter.
+
+```elixir
+frame_size_input = Kino.Input.number("Rows preceding", default: 2)
+department_input = Kino.Input.text("Department", default: "Engineering")
+
+read_or = fn input, default ->
+  try do
+    Kino.Input.read(input) || default
+  rescue
+    _ -> default
+  end
+end
+
+frame_size = read_or.(frame_size_input, 2)
+department_filter = read_or.(department_input, "Engineering")
+
+{:ok, controlled_frame_rows} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  SELECT
+    department,
+    first_name,
+    last_name,
+    salary,
+    avg(salary) OVER (
+      PARTITION BY department
+      ORDER BY salary
+      ROWS BETWEEN #{frame_size} PRECEDING AND CURRENT ROW
+    ) AS moving_average
+  FROM employees
+  WHERE department = $1
+  ORDER BY salary
+  LIMIT 20
+  """, [department_filter])
+
+controlled_frame_rows.rows
+```
+
+## 13) Percentile and Distribution Functions
+
+Add distribution windows alongside rank functions.
+
+```elixir
+{:ok, distribution_rows} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  SELECT
+    department,
+    first_name,
+    last_name,
+    salary,
+    percent_rank() OVER (PARTITION BY department ORDER BY salary) AS percent_rank,
+    cume_dist() OVER (PARTITION BY department ORDER BY salary) AS cumulative_distribution,
+    ntile(4) OVER (PARTITION BY department ORDER BY salary) AS salary_quartile
+  FROM employees
+  ORDER BY department, salary
+  LIMIT 30
+  """, [])
+
+distribution_rows.rows
+```
+
+## 14) Cumulative Salary Curve Spec
+
+Build chart-ready values for cumulative salary curves by department.
+
+```elixir
+{:ok, cumulative_salary_rows} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  SELECT
+    department,
+    salary,
+    sum(salary) OVER (PARTITION BY department ORDER BY salary) AS cumulative_salary
+  FROM employees
+  ORDER BY department, salary
+  """, [])
+
+cumulative_values =
+  Enum.map(cumulative_salary_rows.rows, fn [department, salary, cumulative_salary] ->
+    %{department: department, salary: Decimal.to_float(salary), cumulative_salary: Decimal.to_float(cumulative_salary)}
+  end)
+
+%{
+  mark: "line",
+  data: %{values: cumulative_values},
+  encoding: %{
+    x: %{field: "salary", type: "quantitative"},
+    y: %{field: "cumulative_salary", type: "quantitative"},
+    color: %{field: "department", type: "nominal"}
+  }
+}
+```
+
 ## Next Steps
 
-To extend this workbook, add:
+To extend this workbook further, add:
 
-1. Percentile-style windows and moving averages using custom SQL functions
-2. A section combining window columns with `select_shape/2` for structured output
-3. A dashboard cell that compares top earners by department and tenure buckets
+1. Validate frame-size input before interpolating it into SQL.
+2. Add percentile examples for order totals and product prices.
+3. Render cumulative curves when VegaLite is available.

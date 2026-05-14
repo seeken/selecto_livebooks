@@ -234,8 +234,228 @@ IO.inspect(Map.keys(overlay_customer_domain.joins), label: "Merged joins")
 DomainExtensionsLab.Helpers.explain("Overlay-extended customer domain", overlay_query)
 ```
 
+## 5) Generated View Domain Replacement
+
+When a published view becomes the stable contract, swap the handwritten base
+domain for the generated view domain and keep overlays focused on local
+extensions.
+
+```elixir
+generated_view_domain =
+  CustomerDomain.domain()
+  |> put_in([:name], "customer_order_summary_view")
+  |> put_in([:source, :source_table], "customer_order_summary_view")
+  |> put_in([:source, :fields], [:id, :name, :tier, :order_count, :gross_total])
+  |> put_in([:source, :columns], %{
+    id: %{type: :integer},
+    name: %{type: :string},
+    tier: %{type: :string},
+    order_count: %{type: :integer},
+    gross_total: %{type: :decimal}
+  })
+
+generated_view_query =
+  Selecto.configure(generated_view_domain, :mock_connection, validate: false)
+  |> Selecto.select(select([name, tier, order_count, gross_total]))
+  |> Selecto.order_by(order_by([desc(gross_total)]))
+  |> Selecto.limit(10)
+
+DomainExtensionsLab.Helpers.explain("Generated view-backed domain replacement", generated_view_query)
+```
+
+## 6) Overlay Filters and Columns
+
+Overlays can add derived columns and reusable filter metadata alongside join
+extensions without mutating the base domain module.
+
+```elixir
+overlay_with_reporting_metadata =
+  overlay_customer_domain
+  |> Overlay.merge(%{
+    filters: %{
+      active_tier: %{
+        label: "Active customer tier",
+        field: "tier",
+        operators: [:eq, :in]
+      }
+    },
+    columns: %{
+      tier_label: %{type: :string, label: "Tier Label"}
+    }
+  })
+
+overlay_filter_query =
+  Selecto.configure(overlay_with_reporting_metadata, :mock_connection, validate: false)
+  |> Selecto.select(select([name, tier, orders.order_number, orders.total]))
+  |> Selecto.filter(where(tier == "gold"))
+  |> Selecto.order_by(order_by([desc(orders.total)]))
+  |> Selecto.limit(10)
+
+IO.inspect(Map.keys(Map.get(overlay_with_reporting_metadata, :filters, %{})), label: "Overlay filters")
+DomainExtensionsLab.Helpers.explain("Overlay-defined filter metadata", overlay_filter_query)
+```
+
+## 7) Published View Feeding a Downstream Domain
+
+A view-backed domain can be treated as a compact reporting source for another
+notebook or app.
+
+```elixir
+downstream_view_domain =
+  generated_view_domain
+  |> put_in([:default_selected], ["name", "tier", "order_count", "gross_total"])
+  |> put_in([:default_order_by], [{"gross_total", :desc}])
+
+downstream_view_query =
+  Selecto.configure(downstream_view_domain, :mock_connection, validate: false)
+  |> Selecto.select(select([name, tier, order_count, gross_total]))
+  |> Selecto.filter(where(order_count >= 2))
+  |> Selecto.order_by(order_by([desc(gross_total)]))
+  |> Selecto.limit(10)
+
+DomainExtensionsLab.Helpers.explain("Downstream view-backed domain", downstream_view_query)
+```
+
+## 8) Checked-In Generated-Domain Fixture
+
+For examples that need a stable view-backed domain contract, keep a tiny fixture
+module in the repo instead of rebuilding the map in every notebook cell.
+
+```elixir
+Code.require_file(Path.expand("support/domain_extension_fixture.exs", __DIR__))
+
+fixture_domain = SelectoLivebooks.DomainExtensionFixture.customer_order_summary_domain()
+
+fixture_query =
+  Selecto.configure(fixture_domain, :mock_connection, validate: false)
+  |> Selecto.select(select([name, tier, order_count, gross_total]))
+  |> Selecto.order_by(order_by([desc(gross_total)]))
+  |> Selecto.limit(5)
+
+IO.inspect(fixture_domain.source.source_kind, label: "Fixture source kind")
+IO.inspect(fixture_domain.source.readonly, label: "Fixture readonly")
+DomainExtensionsLab.Helpers.explain("Checked-in view-domain fixture", fixture_query)
+```
+
+## 9) Overlay Conflict Resolution
+
+When two overlays define the same join id, the later merge supplies the active
+join definition. This cell makes the conflict visible before any query uses it.
+
+```elixir
+base_orders_join = overlay_customer_domain.joins.orders
+
+conflicting_orders_overlay = %{
+  joins: %{
+    orders: %{
+      base_orders_join
+      | name: "Orders (inner conflict demo)",
+        type: :inner
+    }
+  }
+}
+
+conflict_resolved_domain =
+  overlay_customer_domain
+  |> Overlay.merge(conflicting_orders_overlay)
+
+%{
+  before: %{name: base_orders_join.name, type: base_orders_join.type},
+  after: %{
+    name: conflict_resolved_domain.joins.orders.name,
+    type: conflict_resolved_domain.joins.orders.type
+  }
+}
+```
+
+## 10) Published-View Column Drift Checklist
+
+Compare the expected published-view columns with the checked-in fixture domain
+before using the view as a long-lived downstream contract.
+
+```elixir
+expected_columns = MapSet.new(["id", "name", "tier", "order_count", "gross_total"])
+
+fixture_columns =
+  fixture_domain.source.columns
+  |> Map.keys()
+  |> Enum.map(&to_string/1)
+  |> MapSet.new()
+
+%{
+  missing_from_fixture: expected_columns |> MapSet.difference(fixture_columns) |> MapSet.to_list(),
+  extra_in_fixture: fixture_columns |> MapSet.difference(expected_columns) |> MapSet.to_list(),
+  stable_contract?: MapSet.equal?(expected_columns, fixture_columns)
+}
+```
+
+## 11) Generate Fixture Shape from Published View Spec
+
+Derive the fixture contract from the published view columns so the handwritten
+fixture can be checked against its source.
+
+```elixir
+published_spec = published_order_domain.published_views.order_rollup
+
+generated_fixture_contract =
+  published_spec.columns
+  |> Enum.map(fn {name, config} -> {to_string(name), config.type} end)
+  |> Map.new()
+
+%{
+  generated_columns: generated_fixture_contract,
+  checked_in_fixture_columns: fixture_domain.source.columns |> Map.keys() |> Enum.map(&to_string/1)
+}
+```
+
+## 12) Filter and Column Overlay Conflicts
+
+The same merge-order rule applies to filters and derived columns.
+
+```elixir
+conflict_base =
+  Overlay.merge(overlay_customer_domain, %{
+    filters: %{tier_filter: %{label: "Tier v1", field: "tier"}},
+    columns: %{tier_label: %{type: :string, label: "Tier Label v1"}}
+  })
+
+conflict_after =
+  Overlay.merge(conflict_base, %{
+    filters: %{tier_filter: %{label: "Tier v2", field: "tier"}},
+    columns: %{tier_label: %{type: :string, label: "Tier Label v2"}}
+  })
+
+%{
+  filter_label: conflict_after.filters.tier_filter.label,
+  column_label: conflict_after.source.columns.tier_label.label
+}
+```
+
+## 13) CI-Friendly View Drift Check
+
+Package the drift check as a function that can be reused by a Mix task or CI
+script.
+
+```elixir
+view_drift_check = fn expected, actual ->
+  expected_set = MapSet.new(expected)
+  actual_set = MapSet.new(actual)
+
+  %{
+    ok?: MapSet.equal?(expected_set, actual_set),
+    missing: expected_set |> MapSet.difference(actual_set) |> MapSet.to_list(),
+    extra: actual_set |> MapSet.difference(expected_set) |> MapSet.to_list()
+  }
+end
+
+view_drift_check.(
+  ["id", "name", "tier", "order_count", "gross_total"],
+  fixture_domain.source.columns |> Map.keys() |> Enum.map(&to_string/1)
+)
+```
+
 ## Next Steps
 
-1. Replace a generated base domain with one produced by `mix selecto.gen.domain --view`
-2. Add overlay-defined filters or columns next to the join extension
-3. Pair a published view with a downstream view-backed domain example
+1. Write the generated fixture contract to an artifact during docs validation
+2. Add examples for overlay deletion/removal semantics if supported
+3. Promote the view drift function into a reusable Mix task

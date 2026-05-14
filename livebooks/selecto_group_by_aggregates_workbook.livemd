@@ -297,10 +297,257 @@ IO.puts("Delivered: #{delivered_count} orders, total #{AggregateLab.Helpers.mone
 IO.puts("Pending:   #{pending_count} orders, total #{AggregateLab.Helpers.money(pending_sum)}, avg #{AggregateLab.Helpers.money(pending_avg)}")
 ```
 
+## 9) Time-Bucketed Aggregate Trends
+
+Use `date_trunc` as a grouping selector to build month-level order trends.
+
+```elixir
+monthly_trend_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select([
+    {:field, {:raw_sql, "date_trunc('month', inserted_at)"}, "order_month"}
+  ])
+  |> Selecto.select(select([as(count(), "order_count"), as(sum(total), "gross_total")]))
+  |> Selecto.group_by([{:raw_sql, "date_trunc('month', inserted_at)"}])
+
+AggregateLab.Helpers.run("Monthly order trends", monthly_trend_query, 24)
+```
+
+## 10) Order-Level to Product-Level Aggregate Flow
+
+Join through order items and products to pivot the question from order volume to
+product contribution in one grouped query.
+
+```elixir
+product_contribution_query =
+  Selecto.configure(config.order_items_domain, config.repo)
+  |> Selecto.select(select([
+    product.name,
+    as(sum(quantity), "units_sold"),
+    as(sum(line_total), "product_revenue"),
+    as(count_distinct(order_id), "order_reach")
+  ]))
+  |> Selecto.filter(where(order.status != "cancelled"))
+  |> Selecto.group_by(group_by([product.name]))
+  |> Selecto.order_by({{:sum, "line_total"}, :desc})
+  |> Selecto.limit(20)
+
+AggregateLab.Helpers.run("Product contribution from order flow", product_contribution_query, 20)
+```
+
+## 11) Chart-Ready Aggregate Maps
+
+Execution formats make it easy to hand aggregate rows to charting cells without
+manual column zipping.
+
+```elixir
+chart_source_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select(select([status, as(count(), "order_count"), as(sum(total), "gross_total")]))
+  |> Selecto.group_by(group_by([status]))
+  |> Selecto.order_by({{:sum, "total"}, :desc})
+
+case Selecto.execute(chart_source_query, format: {:typed_maps, [keys: :strings, coerce: :safe]}) do
+  {:ok, rows} ->
+    rows
+    |> Enum.map(fn row ->
+      %{
+        status: row["status"],
+        order_count: row["order_count"],
+        gross_total: Decimal.to_float(row["gross_total"])
+      }
+    end)
+    |> Kino.DataTable.new()
+
+  {:error, error} ->
+    IO.puts("chart map export failed: #{inspect(error)}")
+end
+```
+
+## 12) Rollup and Cube Subtotal Rows
+
+PostgreSQL `ROLLUP` and `CUBE` emit subtotal rows that are already suitable for
+chart or export pipelines.
+
+```elixir
+{:ok, rollup_result} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  SELECT
+    coalesce(status, 'ALL_STATUSES') AS status,
+    coalesce(shipping_country, 'ALL_COUNTRIES') AS shipping_country,
+    count(*) AS order_count,
+    sum(total) AS gross_total
+  FROM orders
+  GROUP BY ROLLUP(status, shipping_country)
+  ORDER BY status, shipping_country
+  LIMIT 20
+  """, [])
+
+{:ok, cube_result} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  SELECT
+    coalesce(status, 'ALL_STATUSES') AS status,
+    coalesce(shipping_country, 'ALL_COUNTRIES') AS shipping_country,
+    count(*) AS order_count,
+    sum(total) AS gross_total
+  FROM orders
+  GROUP BY CUBE(status, shipping_country)
+  ORDER BY status, shipping_country
+  LIMIT 20
+  """, [])
+
+%{
+  rollup_rows: rollup_result.rows,
+  cube_rows: cube_result.rows
+}
+```
+
+## 13) HAVING-Style Aggregate Filters
+
+Use a raw aggregate predicate in `HAVING` when the grouped result should only
+include dimensions above a threshold.
+
+```elixir
+{:ok, having_result} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  SELECT status, count(*) AS order_count, sum(total) AS gross_total
+  FROM orders
+  GROUP BY status
+  HAVING sum(total) >= $1
+  ORDER BY gross_total DESC
+  """, [Decimal.new("10000")])
+
+having_result.rows
+```
+
+## 14) VegaLite Bar Spec from Aggregate Maps
+
+Export typed aggregate maps and place them into a VegaLite-compatible bar-chart
+spec. If the VegaLite package is available in the Livebook runtime, render it;
+otherwise show the spec as data.
+
+```elixir
+{:ok, aggregate_chart_rows} =
+  Selecto.execute(chart_source_query, format: {:typed_maps, [keys: :strings, coerce: :safe]})
+
+vega_values =
+  Enum.map(aggregate_chart_rows, fn row ->
+    %{
+      status: row["status"],
+      gross_total: Decimal.to_float(row["gross_total"]),
+      order_count: row["order_count"]
+    }
+  end)
+
+vega_spec = %{
+  "$schema" => "https://vega.github.io/schema/vega-lite/v5.json",
+  "data" => %{"values" => vega_values},
+  "mark" => "bar",
+  "encoding" => %{
+    "x" => %{"field" => "status", "type" => "nominal"},
+    "y" => %{"field" => "gross_total", "type" => "quantitative"},
+    "tooltip" => [
+      %{"field" => "status", "type" => "nominal"},
+      %{"field" => "order_count", "type" => "quantitative"},
+      %{"field" => "gross_total", "type" => "quantitative"}
+    ]
+  }
+}
+
+if Code.ensure_loaded?(VegaLite) do
+  VegaLite.from_json(Jason.encode!(vega_spec))
+else
+  Kino.DataTable.new(vega_values)
+end
+```
+
+## 15) Grouping Set Helper Specs
+
+Represent ROLLUP/CUBE requests as validated specs until Selecto-native grouping
+set helpers exist.
+
+```elixir
+grouping_set_specs = [
+  %{helper: :rollup, dimensions: ["status", "shipping_country"], sql: "ROLLUP(status, shipping_country)"},
+  %{helper: :cube, dimensions: ["status", "shipping_country"], sql: "CUBE(status, shipping_country)"}
+]
+
+Kino.DataTable.new(grouping_set_specs)
+```
+
+## 16) Reusable HAVING Builder
+
+Keep aggregate predicates in a tiny builder so callers choose from known
+aggregate expressions and operators.
+
+```elixir
+having_builder = fn aggregate, operator, threshold ->
+  aggregate_sql =
+    case aggregate do
+      :gross_total -> "sum(total)"
+      :order_count -> "count(*)"
+    end
+
+  operator_sql =
+    case operator do
+      :gte -> ">="
+      :gt -> ">"
+    end
+
+  {aggregate_sql <> " " <> operator_sql <> " $1", [threshold]}
+end
+
+{having_sql, having_params} = having_builder.(:gross_total, :gte, Decimal.new("10000"))
+
+{:ok, having_helper_rows} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  SELECT status, count(*) AS order_count, sum(total) AS gross_total
+  FROM orders
+  GROUP BY status
+  HAVING #{having_sql}
+  ORDER BY gross_total DESC
+  """, having_params)
+
+having_helper_rows.rows
+```
+
+## 17) Stacked Bar and Subtotal Chart Specs
+
+Reuse aggregate maps to produce chart specs for stacked bars and subtotal-aware
+tables.
+
+```elixir
+{:ok, stacked_result} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  SELECT status, shipping_country, count(*) AS order_count
+  FROM orders
+  GROUP BY status, shipping_country
+  ORDER BY status, shipping_country
+  """, [])
+
+stacked_values =
+  Enum.map(stacked_result.rows, fn [status, country, count] ->
+    %{status: status, country: country, order_count: count}
+  end)
+
+%{
+  stacked_bar_spec: %{
+    "data" => %{"values" => stacked_values},
+    "mark" => "bar",
+    "encoding" => %{
+      "x" => %{"field" => "status", "type" => "nominal"},
+      "y" => %{"field" => "order_count", "type" => "quantitative"},
+      "color" => %{"field" => "country", "type" => "nominal"}
+    }
+  },
+  subtotal_rows: Enum.take(rollup_result.rows, 5)
+}
+```
+
 ## Next Steps
 
-To extend this workbook, add:
+To extend this workbook further, add:
 
-1. Time-bucketed aggregates (for example month-level trends) using SQL function selectors
-2. Pivot + aggregate flows to move from order-level to product-level analysis in one query
-3. Export-focused cells that transform aggregate rows into maps for charts
+1. Turn grouping-set specs into a small reusable notebook module.
+2. Add HAVING builders for AVG, MIN, and MAX.
+3. Render stacked and subtotal charts when VegaLite is available.

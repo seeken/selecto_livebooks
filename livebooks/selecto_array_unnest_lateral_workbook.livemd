@@ -167,6 +167,21 @@ defmodule ArrayLab.Helpers do
         failure
     end
   end
+
+  def run_shape(label, query, preview_count \\ 10) do
+    explain(label, query)
+
+    case Selecto.execute_shape(query) do
+      {:ok, rows} = ok ->
+        IO.puts("Rows: #{length(rows)}")
+        IO.inspect(Enum.take(rows, preview_count), label: "Preview (up to #{preview_count} shaped rows)")
+        ok
+
+      {:error, error} = failure ->
+        IO.puts("Error: #{inspect(error)}")
+        failure
+    end
+  end
 end
 ```
 
@@ -267,10 +282,246 @@ generate_series_query =
 ArrayLab.Helpers.run("Lateral generate_series", generate_series_query)
 ```
 
+## 7) Grouped Analytics After UNNEST
+
+After expanding product tags, group on the unnested value to build a frequency
+distribution.
+
+```elixir
+tag_frequency_query =
+  Selecto.configure(config.product_domain, config.repo)
+  |> Selecto.unnest("tags", as: "tag")
+  |> Selecto.select([
+    {:field, {:raw_sql, "tag"}, "tag"},
+    {:field, {:raw_sql, "COUNT(*)"}, "product_count"}
+  ])
+  |> Selecto.group_by([{:raw_sql, "tag"}])
+  |> Selecto.order_by({{:count, "*"}, :desc})
+  |> Selecto.limit(20)
+
+ArrayLab.Helpers.run("Tag frequency after UNNEST", tag_frequency_query)
+```
+
+## 8) Hybrid Array and JSON Conditions
+
+Combine array-aware filters with JSON metadata filters to answer mixed
+attribute questions.
+
+```elixir
+hybrid_array_json_query =
+  Selecto.configure(config.product_domain, config.repo)
+  |> Selecto.select(["id", "name", "tags", "metadata"])
+  |> Selecto.array_filter({:array_contains, "tags", ["electronics"]})
+  |> Selecto.json_filter({:json_contains, "metadata", %{"warehouse" => %{"zone" => "in_stock"}}})
+  |> Selecto.order_by({"id", :asc})
+  |> Selecto.limit(10)
+
+ArrayLab.Helpers.run("Array + JSON hybrid filter", hybrid_array_json_query)
+```
+
+## 9) Nested Shape for Array-Derived Output
+
+Use `select_shape/2` to keep root product fields separate from array-derived
+values.
+
+```elixir
+array_shape_query =
+  Selecto.configure(config.product_domain, config.repo)
+  |> Selecto.unnest("tags", as: "tag", ordinality: "tag_position")
+  |> Selecto.select([
+    "id",
+    "name",
+    {:field, {:raw_sql, "tag"}, "tag"},
+    {:field, {:raw_sql, "tag_position"}, "tag_position"}
+  ])
+  |> Selecto.select_shape([
+    "id",
+    "name",
+    {{:field, {:raw_sql, "tag"}, "tag"}, {:field, {:raw_sql, "tag_position"}, "tag_position"}}
+  ])
+  |> Selecto.order_by({"id", :asc})
+  |> Selecto.limit(20)
+
+ArrayLab.Helpers.run_shape("Nested array-derived shape", array_shape_query)
+```
+
+## 10) UNNEST vs JSON Array Expansion
+
+Compare native PostgreSQL arrays with JSON array expansion side by side. The
+result shape is intentionally the same: one product row becomes many analytic
+rows.
+
+```elixir
+{:ok, native_tags} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  SELECT p.name, tag_value, tag_position
+  FROM products p
+  CROSS JOIN LATERAL unnest(p.tags) WITH ORDINALITY AS tags(tag_value, tag_position)
+  ORDER BY p.name, tag_position
+  LIMIT 12
+  """, [])
+
+{:ok, json_flags} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  SELECT p.name, flag_value, flag_position
+  FROM products p
+  CROSS JOIN LATERAL jsonb_array_elements_text(p.metadata -> 'flags')
+    WITH ORDINALITY AS flags(flag_value, flag_position)
+  ORDER BY p.name, flag_position
+  LIMIT 12
+  """, [])
+
+%{
+  native_array_rows: native_tags.rows,
+  json_array_rows: json_flags.rows
+}
+```
+
+## 11) Preserve Empty Arrays with Left Lateral Joins
+
+Use `LEFT JOIN LATERAL` when empty arrays should remain visible in the result
+instead of disappearing during expansion.
+
+```elixir
+{:ok, preserved_empty_arrays} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  WITH sample_products(id, name, tags) AS (
+    VALUES
+      (1, 'Tagged sample', ARRAY['alpha', 'beta']::text[]),
+      (2, 'Empty sample', ARRAY[]::text[])
+  )
+  SELECT sample_products.name, expanded.tag_value
+  FROM sample_products
+  LEFT JOIN LATERAL unnest(sample_products.tags) AS expanded(tag_value) ON true
+  ORDER BY sample_products.id, expanded.tag_value
+  """, [])
+
+preserved_empty_arrays.rows
+```
+
+## 12) Challenge: Rank Tags Within Each Price Band
+
+This challenge expands product tags, groups them by a metadata-derived price
+band, then ranks the most common tags within each band.
+
+```elixir
+{:ok, ranked_tags} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  WITH expanded_tags AS (
+    SELECT
+      p.metadata ->> 'price_band' AS price_band,
+      tag_value
+    FROM products p
+    CROSS JOIN LATERAL unnest(p.tags) AS tags(tag_value)
+  ),
+  tag_counts AS (
+    SELECT price_band, tag_value, count(*) AS product_count
+    FROM expanded_tags
+    GROUP BY price_band, tag_value
+  )
+  SELECT
+    price_band,
+    tag_value,
+    product_count,
+    row_number() OVER (
+      PARTITION BY price_band
+      ORDER BY product_count DESC, tag_value ASC
+    ) AS tag_rank
+  FROM tag_counts
+  ORDER BY price_band, tag_rank
+  LIMIT 20
+  """, [])
+
+ranked_tags.rows
+```
+
+## 13) Helper-Style Lateral Expansion Specs
+
+Until JSON array expansion has a first-class Selecto wrapper, keep the raw SQL
+fragments small and named so they can be swapped for helper calls later.
+
+```elixir
+lateral_specs = [
+  %{
+    label: "native tags",
+    from: "products p",
+    lateral: "unnest(p.tags) WITH ORDINALITY AS expanded(value, position)",
+    selected: ["p.name", "expanded.value", "expanded.position"]
+  },
+  %{
+    label: "json flags",
+    from: "products p",
+    lateral: "jsonb_array_elements_text(p.metadata -> 'flags') WITH ORDINALITY AS expanded(value, position)",
+    selected: ["p.name", "expanded.value", "expanded.position"]
+  }
+]
+
+Enum.map(lateral_specs, fn spec ->
+  sql = """
+  SELECT #{Enum.join(spec.selected, ", ")}
+  FROM #{spec.from}
+  CROSS JOIN LATERAL #{spec.lateral}
+  ORDER BY p.name, expanded.position
+  LIMIT 5
+  """
+
+  {:ok, result} = Ecto.Adapters.SQL.query(config.repo, sql, [])
+  %{label: spec.label, rows: result.rows}
+end)
+```
+
+## 14) Timing: Overlap Filter vs Expanded Grouping
+
+Compare a direct array overlap filter with an expanded-tag grouping query.
+
+```elixir
+timed_query = fn label, sql, params ->
+  {microseconds, {:ok, result}} =
+    :timer.tc(fn -> Ecto.Adapters.SQL.query(config.repo, sql, params) end)
+
+  %{query: label, elapsed_ms: Float.round(microseconds / 1000, 3), rows: length(result.rows)}
+end
+
+[
+  timed_query.(
+    "array overlap",
+    "SELECT id, name FROM products WHERE tags && $1::varchar[]",
+    [["electronics", "outdoor"]]
+  ),
+  timed_query.(
+    "expanded grouping",
+    """
+    SELECT tag_value, count(*)
+    FROM products p
+    CROSS JOIN LATERAL unnest(p.tags) AS tags(tag_value)
+    GROUP BY tag_value
+    ORDER BY count(*) DESC
+    """,
+    []
+  )
+]
+|> Kino.DataTable.new()
+```
+
+## 15) Shaped Ranked Tag Payloads
+
+Turn the ranked-tag challenge rows into nested maps ready for UI display.
+
+```elixir
+ranked_tags.rows
+|> Enum.map(fn [price_band, tag_value, product_count, tag_rank] ->
+  %{
+    price_band: price_band,
+    tag: %{name: tag_value, rank: tag_rank, product_count: product_count}
+  }
+end)
+|> Kino.DataTable.new()
+```
+
 ## Next Steps
 
-To extend this workbook, add:
+To extend this workbook further, add:
 
-1. Grouped analytics after UNNEST (tag frequency distributions)
-2. A section combining `array_filter` and JSON filters for hybrid conditions
-3. A `select_shape/2` variant showing nested array-derived outputs
+1. Promote the lateral spec map into a shared notebook helper
+2. Add query-plan comparisons for overlap filters with and without indexes
+3. Add a UI control that chooses the tag-ranking partition column

@@ -307,13 +307,13 @@ customer_domain_for_set_ops = %{
 employees_identity_query =
   Selecto.configure(config.employee_domain, config.repo)
   |> Selecto.select(select([id, first_name, last_name, department]))
-  |> Selecto.filter(where(active == true))
+  |> Selecto.filter(where(not is_nil(id)))
   |> Selecto.limit(25)
 
 customers_identity_query =
   Selecto.configure(customer_domain_for_set_ops, config.repo)
   |> Selecto.select(select([id, name, email, country]))
-  |> Selecto.filter(where(active == true))
+  |> Selecto.filter(where(not is_nil(id)))
   |> Selecto.limit(25)
 
 cross_domain_union_query =
@@ -439,10 +439,246 @@ SetOpsLab.Helpers.run(
 )
 ```
 
+## 8) Duplicate-Sensitive Set Operations
+
+`EXCEPT` and `INTERSECT` collapse duplicate rows by default. The `all: true`
+variant keeps duplicate multiplicity, which is useful when the repeated value
+itself is the thing being compared.
+
+```elixir
+department_rows_query =
+  Selecto.configure(config.employee_domain, config.repo)
+  |> Selecto.select(select([department]))
+  |> Selecto.filter(where(not is_nil(id)))
+
+manager_department_rows_query =
+  Selecto.configure(config.employee_domain, config.repo)
+  |> Selecto.select(select([department]))
+  |> Selecto.filter(where(not is_nil(manager_id)))
+
+duplicate_intersection_query =
+  Selecto.intersect(department_rows_query, manager_department_rows_query, all: true)
+
+duplicate_difference_query =
+  Selecto.except(department_rows_query, manager_department_rows_query, all: true)
+
+SetOpsLab.Helpers.run(
+  "INTERSECT ALL department rows",
+  "Active employee departments that also occur among employees with managers, preserving duplicate rows.",
+  duplicate_intersection_query,
+  10
+)
+
+SetOpsLab.Helpers.run(
+  "EXCEPT ALL department rows",
+  "Active employee department rows left after removing manager-reporting department rows one-for-one.",
+  duplicate_difference_query,
+  10
+)
+```
+
+## 9) Overlap Summary Table
+
+This cell turns two cohorts into a compact overlap table before choosing a
+set-op query to inspect in detail.
+
+```elixir
+cohort_a =
+  Selecto.configure(config.employee_domain, config.repo)
+  |> Selecto.select(select([id]))
+  |> Selecto.filter(where(not is_nil(id)))
+
+cohort_b =
+  Selecto.configure(config.employee_domain, config.repo)
+  |> Selecto.select(select([id]))
+  |> Selecto.filter(where(not is_nil(manager_id)))
+
+count_rows = fn query ->
+  {:ok, {rows, _columns, _aliases}} = Selecto.execute(query)
+  length(rows)
+end
+
+overlap_summary = [
+  %{slice: "active", rows: count_rows.(cohort_a)},
+  %{slice: "has manager", rows: count_rows.(cohort_b)},
+  %{slice: "both", rows: count_rows.(Selecto.intersect(cohort_a, cohort_b))},
+  %{slice: "active only", rows: count_rows.(Selecto.except(cohort_a, cohort_b))},
+  %{slice: "has manager only", rows: count_rows.(Selecto.except(cohort_b, cohort_a))}
+]
+
+Kino.DataTable.new(overlap_summary)
+```
+
+## 10) Paging Large Set-Op Results
+
+Set operations can be paged after the set-op is composed. Keep a stable
+`order_by/2` at the outer query level so page boundaries are repeatable.
+
+```elixir
+large_set_query =
+  Selecto.union(department_rows_query, manager_department_rows_query, all: true)
+  |> Selecto.order_by({{:raw_sql, "department"}, :asc})
+
+for page <- 0..2 do
+  paged_query =
+    large_set_query
+    |> Selecto.limit(5)
+    |> Selecto.offset(page * 5)
+
+  SetOpsLab.Helpers.run(
+    "Set-op page #{page + 1}",
+    "Five-row page from duplicate-preserving department union.",
+    paged_query,
+    5
+  )
+end
+
+:ok
+```
+
+## 11) SQL Diff: `ALL` vs Duplicate-Collapsing
+
+Inspect the generated SQL for duplicate-collapsing and duplicate-preserving set
+operations side by side.
+
+```elixir
+set_sql_diff_rows =
+  [
+    {"UNION", Selecto.union(department_rows_query, manager_department_rows_query)},
+    {"UNION ALL", Selecto.union(department_rows_query, manager_department_rows_query, all: true)},
+    {"INTERSECT", Selecto.intersect(department_rows_query, manager_department_rows_query)},
+    {"INTERSECT ALL", Selecto.intersect(department_rows_query, manager_department_rows_query, all: true)}
+  ]
+  |> Enum.map(fn {label, query} ->
+    {sql, params} = Selecto.to_sql(query)
+    %{operation: label, sql: Selecto.format_sql(sql), params: inspect(params)}
+  end)
+
+Kino.DataTable.new(set_sql_diff_rows)
+```
+
+## 12) CTE-Pre-Normalized Heterogeneous Union
+
+Use CTEs to normalize different source columns into the same output contract
+before unioning them.
+
+```elixir
+{:ok, normalized_union} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  WITH employee_identity AS (
+    SELECT id::text AS entity_id, first_name || ' ' || last_name AS display_name, department AS segment
+    FROM employees
+    WHERE id IS NOT NULL
+  ),
+  customer_identity AS (
+    SELECT id::text AS entity_id, name AS display_name, country AS segment
+    FROM customers
+    WHERE id IS NOT NULL
+  )
+  SELECT 'employee' AS source, entity_id, display_name, segment FROM employee_identity
+  UNION ALL
+  SELECT 'customer' AS source, entity_id, display_name, segment FROM customer_identity
+  ORDER BY source, display_name
+  LIMIT 20
+  """, [])
+
+normalized_union.rows
+```
+
+## 13) Challenge: Predict Overlap Counts
+
+Write predictions first, then compare with the actual set-operation counts.
+
+```elixir
+predictions = %{
+  active: 20,
+  has_manager: 20,
+  both: 10
+}
+
+actuals = %{
+  active: count_rows.(cohort_a),
+  has_manager: count_rows.(cohort_b),
+  both: count_rows.(Selecto.intersect(cohort_a, cohort_b))
+}
+
+actuals
+|> Enum.map(fn {key, actual} ->
+  predicted = Map.fetch!(predictions, key)
+  %{cohort: key, predicted: predicted, actual: actual, delta: actual - predicted}
+end)
+|> Kino.DataTable.new()
+```
+
+## 14) Visual Duplicate Difference Indicators
+
+Mark where duplicate-preserving counts diverge from duplicate-collapsing counts.
+
+```elixir
+duplicate_indicator_rows =
+  [
+    {"UNION", Selecto.union(department_rows_query, manager_department_rows_query), Selecto.union(department_rows_query, manager_department_rows_query, all: true)},
+    {"INTERSECT", Selecto.intersect(department_rows_query, manager_department_rows_query), Selecto.intersect(department_rows_query, manager_department_rows_query, all: true)}
+  ]
+  |> Enum.map(fn {operation, collapsed_query, all_query} ->
+    collapsed = count_rows.(collapsed_query)
+    preserved = count_rows.(all_query)
+
+    %{
+      operation: operation,
+      collapsed: collapsed,
+      duplicate_preserving: preserved,
+      differs?: collapsed != preserved,
+      delta: preserved - collapsed
+    }
+  end)
+
+Kino.DataTable.new(duplicate_indicator_rows)
+```
+
+## 15) Normalized Union with Timestamp and Numeric Coercion
+
+Coerce timestamps and numeric values before unioning heterogeneous sources.
+
+```elixir
+{:ok, coerced_union} =
+  Ecto.Adapters.SQL.query(config.repo, """
+  SELECT entity_type, entity_id, event_at, amount
+  FROM (
+    SELECT 'order' AS entity_type, id::text AS entity_id, inserted_at AS event_at, total::numeric AS amount
+    FROM orders
+    UNION ALL
+    SELECT 'customer' AS entity_type, id::text AS entity_id, inserted_at AS event_at, 0::numeric AS amount
+    FROM customers
+  ) normalized_events
+  ORDER BY event_at DESC
+  LIMIT 20
+  """, [])
+
+coerced_union.rows
+```
+
+## 16) Predict EXCEPT Counts After Cohort Changes
+
+Change one cohort definition and compare predicted versus actual `EXCEPT`
+counts.
+
+```elixir
+high_value_ids =
+  Selecto.configure(config.employee_domain, config.repo)
+  |> Selecto.select(select([id]))
+  |> Selecto.filter(where(not is_nil(manager_id)))
+
+except_prediction = %{active_except_has_manager: 5}
+except_actual = count_rows.(Selecto.except(cohort_a, high_value_ids))
+
+%{prediction: except_prediction.active_except_has_manager, actual: except_actual, delta: except_actual - except_prediction.active_except_has_manager}
+```
+
 ## Next Steps
 
-To extend this workbook, add:
+To extend this workbook further, add:
 
-1. Set-op examples with `EXCEPT ALL` and `INTERSECT ALL` where duplicates are meaningful
-2. A workbook cell that visualizes overlaps as a small Venn-style summary table
-3. A paging strategy section for large set-op outputs
+1. Add inline badges/colors for duplicate difference rows.
+2. Add normalized unions that include nullable fields.
+3. Add a multi-step prediction challenge covering UNION, INTERSECT, and EXCEPT.

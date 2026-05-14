@@ -326,10 +326,9 @@ json_array_filter_query =
     {:json_extract_text, "metadata", "$.warehouse.zone", as: "warehouse_zone"}
   ])
   |> Selecto.json_filter([
-    {:json_extract_text, "metadata", "$.warehouse.zone", {:=, "in_stock"}},
-    {:json_path_exists, "metadata", "$.flags[0]"}
+    {:json_contains, "metadata", %{"warehouse" => %{"zone" => "in_stock"}}}
   ])
-  |> Selecto.array_filter({:array_overlap, "tags", ["featured", "new", "promo"]})
+  |> Selecto.array_filter({:array_overlap, "tags", ["electronics", "outdoor", "mobile"]})
   |> Selecto.order_by({"price", :desc})
   |> Selecto.limit(10)
 
@@ -429,8 +428,300 @@ IO.puts("All checks pass? #{Enum.all?(fragment_checks, fn {_f, ok?} -> ok? end)}
 FilteringLab.Helpers.run("Challenge query", challenge_query, 10)
 ```
 
+## 12) Score Challenge Solutions by Row-Count Similarity
+
+This helper compares a learner query to a reference query without requiring an
+exact SQL string match.
+
+```elixir
+defmodule FilteringLab.ChallengeScoring do
+  @moduledoc false
+
+  def row_count(query) do
+    {:ok, {rows, _columns, _aliases}} = Selecto.execute(query)
+    length(rows)
+  end
+
+  def score(reference_query, learner_query) do
+    reference_count = row_count(reference_query)
+    learner_count = row_count(learner_query)
+    distance = abs(reference_count - learner_count)
+    denominator = max(reference_count, 1)
+    similarity = max(0.0, 1.0 - distance / denominator)
+
+    %{
+      reference_rows: reference_count,
+      learner_rows: learner_count,
+      row_delta: learner_count - reference_count,
+      similarity_percent: Float.round(similarity * 100, 1)
+    }
+  end
+end
+
+reference_challenge_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select(select([status, shipping_country, as(sum(total), "total")]))
+  |> Selecto.filter(where(status in ["processing", "shipped", "delivered"]))
+  |> Selecto.filter(where(total >= 50 and total <= 500))
+  |> Selecto.group_by(group_by([status, shipping_country]))
+  |> Selecto.order_by({{:sum, "total"}, :desc})
+  |> Selecto.limit(10)
+
+FilteringLab.ChallengeScoring.score(reference_challenge_query, challenge_query)
+|> then(&Kino.DataTable.new([&1]))
+```
+
+## 13) Safely Parameterize User-Provided Filter Values
+
+Validate user input into a small, typed allowlist before it becomes a Selecto
+filter. The filter itself still carries values as parameters instead of SQL
+string interpolation.
+
+```elixir
+allowed_statuses = ["processing", "shipped", "delivered", "cancelled", "returned", "pending"]
+
+user_filter = %{
+  "status" => "delivered",
+  "min_total" => "75",
+  "country" => "United States"
+}
+
+with status <- user_filter["status"],
+     true <- status in allowed_statuses,
+     {min_total, ""} <- Decimal.parse(user_filter["min_total"]),
+     country when byte_size(country) <= 80 <- user_filter["country"] do
+  safe_parameterized_query =
+    Selecto.configure(config.order_domain, config.repo)
+    |> Selecto.select(select([order_number, status, total, shipping_country]))
+    |> Selecto.filter(where(status == ^status))
+    |> Selecto.filter(where(total >= ^min_total))
+    |> Selecto.filter(where(shipping_country == ^country))
+    |> Selecto.order_by(order_by([desc(total)]))
+    |> Selecto.limit(10)
+
+  FilteringLab.Helpers.run("Safely parameterized user filters", safe_parameterized_query)
+else
+  _ -> IO.puts("Rejected unsafe or unsupported filter input")
+end
+```
+
+## 14) Filter AST Next to Generated SQL
+
+For debugging, inspect the internal filter tree and generated SQL together.
+
+```elixir
+filter_debug_rows =
+  [
+    {"basic", basic_filter_query},
+    {"membership", membership_query},
+    {"challenge", challenge_query}
+  ]
+  |> Enum.map(fn {label, query} ->
+    {sql, params} = Selecto.to_sql(query)
+
+    %{
+      label: label,
+      filter_ast: inspect(query.set.filtered, pretty: true, limit: 40),
+      sql: Selecto.format_sql(sql),
+      params: inspect(params)
+    }
+  end)
+
+Kino.DataTable.new(filter_debug_rows)
+```
+
+## 15) Optional Filter Challenge with Match Scoring
+
+Accept optional criteria, apply only the provided filters, and score how many
+criteria each returned row satisfied.
+
+```elixir
+optional_filters = %{
+  "status" => "delivered",
+  "min_total" => Decimal.new("250"),
+  "country" => nil
+}
+
+match_score_sql =
+  "((selecto_root.status = 'delivered')::int + (selecto_root.total >= 250)::int + (selecto_root.shipping_country = 'USA')::int)"
+
+optional_challenge_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> then(fn query ->
+    case optional_filters["status"] do
+      nil -> query
+      status -> Selecto.filter(query, where(status == ^status))
+    end
+  end)
+  |> then(fn query ->
+    case optional_filters["min_total"] do
+      nil -> query
+      min_total -> Selecto.filter(query, where(total >= ^min_total))
+    end
+  end)
+  |> then(fn query ->
+    case optional_filters["country"] do
+      nil -> query
+      country -> Selecto.filter(query, where(shipping_country == ^country))
+    end
+  end)
+  |> Selecto.select([
+    "order_number",
+    "status",
+    "total",
+    "shipping_country",
+    {:field, {:raw_sql, match_score_sql}, "match_score"}
+  ])
+  |> Selecto.order_by({{:raw_sql, match_score_sql}, :desc})
+  |> Selecto.order_by({"total", :desc})
+  |> Selecto.limit(10)
+
+FilteringLab.Helpers.run("Optional filters with match score", optional_challenge_query, 10)
+```
+
+## 16) Reject Unsupported Field Names First
+
+Validate requested field names before constructing filter expressions. This
+keeps user input out of field paths and raw SQL fragments.
+
+```elixir
+allowed_filter_fields = %{
+  "status" => &where(status == ^&1),
+  "shipping_country" => &where(shipping_country == ^&1)
+}
+
+requested_filters = %{
+  "status" => "shipped",
+  "shipping_country" => "USA",
+  "total; drop table orders" => "nope"
+}
+
+unsupported_fields =
+  requested_filters
+  |> Map.keys()
+  |> Enum.reject(&Map.has_key?(allowed_filter_fields, &1))
+
+if unsupported_fields == [] do
+  requested_filters
+  |> Enum.reduce(Selecto.configure(config.order_domain, config.repo), fn {field, value}, query ->
+    Selecto.filter(query, allowed_filter_fields[field].(value))
+  end)
+  |> Selecto.select(select([order_number, status, shipping_country, total]))
+  |> Selecto.limit(10)
+  |> FilteringLab.Helpers.run("Validated dynamic field filters", 10)
+else
+  IO.puts("Rejected unsupported fields: #{Enum.join(unsupported_fields, ", ")}")
+end
+```
+
+## 17) Equivalent DSL, Sigil, and Tuple Filters
+
+Compare three ways to express the same country filter and inspect the generated
+SQL shape.
+
+```elixir
+country_value = "USA"
+
+equivalent_filter_queries = [
+  {"macro DSL",
+   Selecto.configure(config.order_domain, config.repo)
+   |> Selecto.filter(where(shipping_country == ^country_value))
+   |> Selecto.select(select([order_number, shipping_country]))
+   |> Selecto.limit(3)},
+  {"sigil DSL",
+   Selecto.configure(config.order_domain, config.repo)
+   |> Selecto.filter(~SELECTO"like(shipping_country, ^country_value)")
+   |> Selecto.select(select([order_number, shipping_country]))
+   |> Selecto.limit(3)},
+  {"tuple form",
+   Selecto.configure(config.order_domain, config.repo)
+   |> Selecto.filter({"shipping_country", country_value})
+   |> Selecto.select(select([order_number, shipping_country]))
+   |> Selecto.limit(3)}
+]
+
+equivalent_filter_queries
+|> Enum.map(fn {label, query} ->
+  {sql, params} = Selecto.to_sql(query)
+  %{style: label, sql: Selecto.format_sql(sql), params: inspect(params)}
+end)
+|> Kino.DataTable.new()
+```
+
+## 18) Interactive Optional Filter Form
+
+Build the optional filter map from Livebook inputs, while keeping defaults for
+automated notebook verification.
+
+```elixir
+status_input = Kino.Input.text("Status", default: "delivered")
+country_input = Kino.Input.text("Country", default: "USA")
+
+safe_read = fn input, default ->
+  try do
+    Kino.Input.read(input) || default
+  rescue
+    _ -> default
+  end
+end
+
+form_filter_map = %{
+  "status" => safe_read.(status_input, "delivered"),
+  "country" => safe_read.(country_input, "USA")
+}
+
+form_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.filter(where(status == ^form_filter_map["status"]))
+  |> Selecto.filter(where(shipping_country == ^form_filter_map["country"]))
+  |> Selecto.select(select([order_number, status, shipping_country, total]))
+  |> Selecto.limit(8)
+
+FilteringLab.Helpers.run("Input-built optional filter map", form_query, 8)
+```
+
+## 19) Validate Operator Names
+
+Validate operator names before converting user choices into filter expressions.
+
+```elixir
+allowed_operators = %{
+  "eq" => fn field, value -> {field, value} end,
+  "in" => fn field, value -> {field, {:in, List.wrap(value)}} end
+}
+
+operator_request = %{field: "status", operator: "in", value: ["processing", "shipped"]}
+
+case Map.fetch(allowed_operators, operator_request.operator) do
+  {:ok, builder} ->
+    operator_query =
+      Selecto.configure(config.order_domain, config.repo)
+      |> Selecto.filter(builder.(operator_request.field, operator_request.value))
+      |> Selecto.select(select([order_number, status, total]))
+      |> Selecto.limit(8)
+
+    FilteringLab.Helpers.run("Validated operator filter", operator_query, 8)
+
+  :error ->
+    IO.puts("Rejected unsupported operator: #{operator_request.operator}")
+end
+```
+
+## 20) Filter Syntax Selection Guide
+
+Use this table as a quick guide for generated code and teaching examples.
+
+```elixir
+[
+  %{syntax: "macro DSL", clearest_for: "handwritten Elixir examples", tradeoff: "compile-time expression shape"},
+  %{syntax: "sigil DSL", clearest_for: "compact text filters", tradeoff: "limited helper vocabulary"},
+  %{syntax: "tuple form", clearest_for: "generated filters from validated UI input", tradeoff: "less natural for complex boolean logic"}
+]
+|> Kino.DataTable.new()
+```
+
 ## Next Steps
 
-* Add a helper that scores challenge solutions by row-count similarity to a reference query.
-* Add a section on safely parameterizing user-provided filter values.
-* Add a compact table showing filter AST (`query.set.filtered`) next to generated SQL.
+* Add multi-select controls for status and country filter inputs.
+* Add operator validation examples for ranges and null checks.
+* Add a generated-code example that picks syntax based on filter complexity.

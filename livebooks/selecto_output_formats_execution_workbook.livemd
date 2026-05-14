@@ -316,10 +316,239 @@ case Selecto.execute_stream(adapter_stream_probe, analyze_complexity: false) do
 end
 ```
 
+## 7) Compare `:maps` and `:typed_maps` Overhead
+
+This micro-benchmark keeps the query shape identical and varies only the output
+transformer.
+
+```elixir
+benchmark_query =
+  Selecto.configure(config.product_domain, config.repo)
+  |> Selecto.select(select([id, name, sku, price, stock_quantity]))
+  |> Selecto.order_by(order_by([asc(id)]))
+  |> Selecto.limit(250)
+
+format_benchmark =
+  for {label, format} <- [
+        {"maps", :maps},
+        {"typed_maps", {:typed_maps, [keys: :strings, coerce: :safe]}}
+      ] do
+    {micros, result} =
+      :timer.tc(fn ->
+        Selecto.execute(benchmark_query, format: format)
+      end)
+
+    rows =
+      case result do
+        {:ok, rows} when is_list(rows) -> length(rows)
+        _ -> 0
+      end
+
+    %{format: label, rows: rows, elapsed_ms: Float.round(micros / 1000, 2)}
+  end
+
+Kino.DataTable.new(format_benchmark)
+```
+
+## 8) Write CSV Output to Disk
+
+Export cells can write the built-in CSV output directly to a file that other
+tools can consume.
+
+```elixir
+export_query =
+  Selecto.configure(config.product_domain, config.repo)
+  |> Selecto.select(select([id, sku, name, price, stock_quantity]))
+  |> Selecto.order_by(order_by([asc(sku)]))
+  |> Selecto.limit(100)
+
+export_path = Path.join(System.tmp_dir!(), "selecto_products_export.csv")
+
+case Selecto.execute(export_query, format: {:csv, [headers: true]}) do
+  {:ok, csv_string} ->
+    File.write!(export_path, csv_string)
+    IO.puts("Wrote #{byte_size(csv_string)} bytes to #{export_path}")
+
+  {:error, error} ->
+    IO.puts("CSV export failed: #{inspect(error)}")
+end
+```
+
+## 9) Fold a Stream into Aggregate Statistics
+
+For simple Elixir-side summaries, stream formatted rows and reduce them without
+holding additional derived structures.
+
+```elixir
+stats_query =
+  Selecto.configure(config.product_domain, config.repo)
+  |> Selecto.select(select([id, name, price, stock_quantity]))
+  |> Selecto.order_by(order_by([asc(id)]))
+  |> Selecto.limit(250)
+
+case Selecto.execute(stats_query, format: {:stream, :maps}) do
+  {:ok, stream} ->
+    stats =
+      Enum.reduce(stream, %{rows: 0, total_stock: 0, max_price: Decimal.new("0")}, fn row, acc ->
+        price = Map.fetch!(row, "price")
+        max_price = if Decimal.compare(price, acc.max_price) == :gt, do: price, else: acc.max_price
+
+        %{
+          rows: acc.rows + 1,
+          total_stock: acc.total_stock + Map.fetch!(row, "stock_quantity"),
+          max_price: max_price
+        }
+      end)
+
+    IO.inspect(stats, label: "folded stream stats")
+
+  {:error, error} ->
+    IO.puts("stream fold failed: #{inspect(error)}")
+end
+```
+
+## 11) Memory Profile for Wide Result Sets
+
+Use lightweight runtime memory snapshots around wide result execution to compare
+the footprint of eager rows with stream processing.
+
+```elixir
+wide_query =
+  Selecto.configure(config.product_domain, config.repo)
+  |> Selecto.select(select([id, name, sku, price, stock_quantity, active, featured, tags, metadata]))
+  |> Selecto.order_by(order_by([asc(id)]))
+  |> Selecto.limit(200)
+
+memory_before = :erlang.memory(:total)
+{:ok, wide_rows} = Selecto.execute(wide_query, format: :maps)
+memory_after = :erlang.memory(:total)
+
+%{
+  rows: length(wide_rows),
+  memory_delta_bytes: memory_after - memory_before,
+  sample_keys: wide_rows |> List.first() |> Map.keys()
+}
+```
+
+## 12) JSON-Lines Export from Stream Output
+
+Stream maps and encode each row as one JSON document per line.
+
+```elixir
+json_lines_query =
+  Selecto.configure(config.product_domain, config.repo)
+  |> Selecto.select(select([id, name, sku, price]))
+  |> Selecto.order_by(order_by([asc(id)]))
+  |> Selecto.limit(10)
+
+{:ok, json_line_stream} = Selecto.execute(json_lines_query, format: {:stream, :maps})
+
+json_lines_preview =
+  json_line_stream
+  |> Stream.map(&Jason.encode!/1)
+  |> Enum.join("\n")
+
+IO.puts(json_lines_preview)
+```
+
+## 13) Choose an Execution Format
+
+This cell mirrors a Livebook input-driven branch with a single variable so it
+can run unattended during verification.
+
+```elixir
+chosen_format = :typed_maps
+
+format_option =
+  case chosen_format do
+    :raw -> nil
+    :maps -> :maps
+    :typed_maps -> {:typed_maps, [keys: :strings, coerce: :safe]}
+    :csv -> :csv
+  end
+
+interactive_format_query =
+  Selecto.configure(config.product_domain, config.repo)
+  |> Selecto.select(select([name, sku, price]))
+  |> Selecto.order_by(order_by([asc(name)]))
+  |> Selecto.limit(5)
+
+case format_option do
+  nil -> Selecto.execute(interactive_format_query)
+  option -> Selecto.execute(interactive_format_query, format: option)
+end
+|> IO.inspect(label: "chosen execution format: #{chosen_format}", limit: :infinity)
+```
+
+## 14) Format Select Input
+
+Use a select control to choose output format, with a default for unattended
+verification.
+
+```elixir
+format_input =
+  Kino.Input.select("Output format", [{"typed_maps", "typed_maps"}, {"maps", "maps"}, {"csv", "csv"}], default: "typed_maps")
+
+selected_format =
+  try do
+    Kino.Input.read(format_input) || "typed_maps"
+  rescue
+    _ -> "typed_maps"
+  end
+
+selected_option =
+  case selected_format do
+    "typed_maps" -> {:typed_maps, [keys: :strings, coerce: :safe]}
+    "maps" -> :maps
+    "csv" -> :csv
+  end
+
+Selecto.execute(interactive_format_query, format: selected_option)
+|> IO.inspect(label: "selected format result", limit: 20)
+```
+
+## 15) Download-Ready Export Payloads
+
+Prepare CSV and JSON-lines strings that can be handed to a download cell.
+
+```elixir
+{:ok, csv_export} = Selecto.execute(json_lines_query, format: :csv)
+{:ok, export_stream} = Selecto.execute(json_lines_query, format: {:stream, :maps})
+
+download_payloads = %{
+  csv_bytes: byte_size(csv_export),
+  jsonl_bytes: export_stream |> Stream.map(&Jason.encode!/1) |> Enum.join("\n") |> byte_size()
+}
+
+download_payloads
+```
+
+## 16) Memory Delta by Format
+
+Run the same query through several output formats and compare memory deltas.
+
+```elixir
+measure_format = fn label, option ->
+  before_memory = :erlang.memory(:total)
+  result = Selecto.execute(interactive_format_query, format: option)
+  after_memory = :erlang.memory(:total)
+
+  %{format: label, ok?: match?({:ok, _}, result), memory_delta_bytes: after_memory - before_memory}
+end
+
+[
+  measure_format.("maps", :maps),
+  measure_format.("typed maps", {:typed_maps, [keys: :strings, coerce: :safe]}),
+  measure_format.("csv", :csv),
+  measure_format.("stream maps", {:stream, :maps})
+]
+|> Kino.DataTable.new()
+```
+
 ## Next Steps
 
-To extend this workbook, add:
+To extend this workbook further, add:
 
-1. Benchmarks comparing `:maps` vs `:typed_maps` overhead for larger result sets
-2. A section writing CSV output directly to disk for export workflows
-3. A stream-processing section folding results into aggregate statistics in Elixir
+1. Add `Kino.Download` cells for the export payloads.
+2. Add larger-page benchmarks for stream memory behavior.
+3. Add a format compatibility matrix for each `Selecto.execute/2` option.
