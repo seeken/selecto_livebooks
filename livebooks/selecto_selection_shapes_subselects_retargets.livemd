@@ -306,7 +306,66 @@ end)
 :ok
 ```
 
-## 3.1) Subselect Format Matrix
+## 3.1) Nested Explicit Subselects
+
+Nested subselect specs let a parent JSON aggregate carry child arrays without multiplying the root rows. This cell attaches order items to each order and nests the product payload under each line item.
+
+```elixir
+import Selecto.ExprMacros
+
+nested_subselect_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.select(select([order_number, status, total]))
+  |> Selecto.filter(where(status == "processing" or status == "shipped"))
+  |> Selecto.subselect([
+    %{
+      target_schema: :order_items,
+      fields: ["quantity", "line_total"],
+      format: :json_agg,
+      alias: "line_items",
+      join_path: [:order_items],
+      nested: [
+        %{
+          key: "product",
+          target_schema: :products,
+          fields: ["name", "sku"],
+          format: :json_agg,
+          join_path: [:order_items, :product]
+        }
+      ]
+    }
+  ])
+  |> Selecto.order_by(order_by([desc(total)]))
+  |> Selecto.limit(5)
+
+SelectionFocus.Helpers.explain("Nested subselect query", nested_subselect_query)
+
+{:ok, {rows, _columns, _aliases}} =
+  SelectionFocus.Helpers.run("Nested subselect query", nested_subselect_query)
+
+Enum.each(rows, fn [order_number, status, total, line_items] ->
+  IO.puts("\norder=#{order_number} status=#{status} total=#{inspect(total)}")
+
+  line_items
+  |> List.wrap()
+  |> Enum.take(2)
+  |> Enum.each(fn item ->
+    product =
+      item["product"]
+      |> List.wrap()
+      |> List.first(%{})
+
+    IO.puts(
+      "  item quantity=#{item["quantity"]} line_total=#{inspect(item["line_total"])} " <>
+        "product=#{product["name"] || "(missing)"} sku=#{product["sku"] || "(missing)"}"
+    )
+  end)
+end)
+
+:ok
+```
+
+## 3.2) Subselect Format Matrix
 
 This cell compares subselect aggregation formats that fit the numeric
 `order_items` sample fields: `:json_agg`, `:array_agg`, and `:count`.
@@ -343,7 +402,7 @@ end)
 :ok
 ```
 
-## 3.2) Subselect Syntax Variants
+## 3.3) Subselect Syntax Variants
 
 `subselect/3` accepts both compact string syntax and explicit map syntax.
 This cell runs one query for each style so you can compare readability and output.

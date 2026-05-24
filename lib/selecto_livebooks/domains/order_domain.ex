@@ -10,10 +10,27 @@ defmodule SelectoLivebooks.Domains.OrderDomain do
       source: %{
         source_table: "orders",
         primary_key: :id,
-        fields: [:id, :order_number, :status, :subtotal, :tax, :shipping, :discount,
-                 :total, :shipping_address, :shipping_city, :shipping_region,
-                 :shipping_postal_code, :shipping_country, :notes,
-                 :shipped_at, :delivered_at, :customer_id, :inserted_at, :updated_at],
+        fields: [
+          :id,
+          :order_number,
+          :status,
+          :subtotal,
+          :tax,
+          :shipping,
+          :discount,
+          :total,
+          :shipping_address,
+          :shipping_city,
+          :shipping_region,
+          :shipping_postal_code,
+          :shipping_country,
+          :notes,
+          :shipped_at,
+          :delivered_at,
+          :customer_id,
+          :inserted_at,
+          :updated_at
+        ],
         columns: %{
           id: %{type: :integer},
           order_number: %{type: :string, label: "Order #"},
@@ -36,8 +53,18 @@ defmodule SelectoLivebooks.Domains.OrderDomain do
           updated_at: %{type: :utc_datetime}
         },
         associations: %{
-          customer: %{field: :customer, queryable: :customers, owner_key: :customer_id, related_key: :id},
-          order_items: %{field: :order_items, queryable: :order_items, owner_key: :id, related_key: :order_id}
+          customer: %{
+            field: :customer,
+            queryable: :customers,
+            owner_key: :customer_id,
+            related_key: :id
+          },
+          order_items: %{
+            field: :order_items,
+            queryable: :order_items,
+            owner_key: :id,
+            related_key: :order_id
+          }
         }
       },
       schemas: %{
@@ -61,8 +88,16 @@ defmodule SelectoLivebooks.Domains.OrderDomain do
         order_items: %{
           source_table: "order_items",
           primary_key: :id,
-          fields: [:id, :quantity, :unit_price, :discount, :line_total, :line_number,
-                   :order_id, :product_id],
+          fields: [
+            :id,
+            :quantity,
+            :unit_price,
+            :discount,
+            :line_total,
+            :line_number,
+            :order_id,
+            :product_id
+          ],
           redact_fields: [],
           columns: %{
             id: %{type: :integer},
@@ -73,6 +108,14 @@ defmodule SelectoLivebooks.Domains.OrderDomain do
             line_number: %{type: :integer},
             order_id: %{type: :integer},
             product_id: %{type: :integer}
+          },
+          associations: %{
+            product: %{
+              field: :product,
+              queryable: :products,
+              owner_key: :product_id,
+              related_key: :id
+            }
           }
         },
         products: %{

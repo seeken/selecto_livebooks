@@ -160,6 +160,41 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     assert params == ["delivered", 2]
   end
 
+  test "selection workbook nested subselect generates child JSON aggregate" do
+    query =
+      SelectoLivebooks.Domains.OrderDomain.domain()
+      |> Selecto.configure(:mock_connection)
+      |> Selecto.select(["order_number", "status", "total"])
+      |> Selecto.subselect([
+        %{
+          target_schema: :order_items,
+          fields: ["quantity", "line_total"],
+          format: :json_agg,
+          alias: "line_items",
+          join_path: [:order_items],
+          nested: [
+            %{
+              key: "product",
+              target_schema: :products,
+              fields: ["name", "sku"],
+              format: :json_agg,
+              join_path: [:order_items, :product]
+            }
+          ]
+        }
+      ])
+      |> Selecto.limit(5)
+
+    {sql, params} = Selecto.to_sql(query)
+
+    assert sql =~ ~r/json_agg\(json_build_object/i
+    assert sql =~ "'product'"
+    assert sql =~ ~r/from\s+products\s+sub_order_items_product/i
+    assert sql =~ ~r/sub_order_items_product\."id"\s*=\s*sub_order_items\."product_id"/i
+    assert sql =~ ~r/as\s+"line_items"/i
+    assert params == []
+  end
+
   test "subquery join workbook exposes macro-selected subquery fields" do
     import Selecto.ExprMacros
 
