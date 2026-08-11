@@ -1,0 +1,66 @@
+# Selecto Bounded Verification Workbook
+
+This workbook runs the verification entry points shipped by current Selecto,
+SelectoUpdato, SelectoComponents, and the PostgreSQL write adapter. Each proof
+is exhaustive over its named finite model; none claims to prove arbitrary host
+code or an unbounded state space.
+
+## Setup
+
+```elixir
+Code.require_file(Path.expand("support/bootstrap.exs", __DIR__))
+SelectoLivebooksNotebookBootstrap.install_verification!()
+```
+
+## 1) Run the ecosystem safety models
+
+```elixir
+reports = %{
+  query_scope: Selecto.Verification.QuerySafety.verify(),
+  domain_contract: Selecto.Verification.ContractSafety.verify(),
+  write_scope: SelectoUpdato.Verification.WriteSafety.verify(),
+  action_capability: SelectoUpdato.Verification.ActionSafety.verify(),
+  action_visibility: SelectoComponents.Verification.ActionVisibility.verify()
+}
+
+Enum.each(reports, fn {name, report} ->
+  true = report.proved?
+
+  IO.puts(
+    "#{name}: #{report.check_count} checks across #{report.state_count} states " <>
+      "(#{report.proof_level})"
+  )
+end)
+
+Map.new(reports, fn {name, report} ->
+  {name,
+   Map.take(report, [
+     :model,
+     :proof_level,
+     :state_count,
+     :invariant_count,
+     :check_count,
+     :proved?
+   ])}
+end)
+```
+
+## 2) Produce JSON-ready proof material
+
+Proof reports use portable data and can be persisted by the package Mix tasks:
+`mix selecto.verify`, `mix selecto_updato.verify`, and
+`mix selecto_components.verify`. This cell demonstrates the same JSON boundary
+without writing a file.
+
+```elixir
+proof_json =
+  reports
+  |> Map.new(fn {name, report} -> {to_string(name), report} end)
+  |> Jason.encode!(pretty: true)
+
+proof_json
+```
+
+The PostgreSQL adapter conformance preview and real transactional rollback
+probe live in `selecto_updato_feature_tour.livemd`, where the adapter is already
+installed and a direct Postgrex session is intentional.

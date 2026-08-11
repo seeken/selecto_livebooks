@@ -1,5 +1,5 @@
 defmodule SelectoLivebooks.NotebookIntegrityTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   @repo_root Path.expand("..", __DIR__)
   @livebook_dir Path.join(@repo_root, "livebooks")
@@ -22,8 +22,16 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     updato_root = Path.expand("../selecto_updato", @repo_root)
 
     if File.dir?(updato_root) do
-      assert {:selecto_updato, [path: ^updato_root, override: true]} =
-               apply(SelectoLivebooksNotebookBootstrap, :updato_dep, [])
+      with_env(
+        %{
+          "SELECTO_ECOSYSTEM_USE_LOCAL" => "1",
+          "SELECTO_LIVE_SELECTO_UPDATO_PATH" => nil
+        },
+        fn ->
+          assert {:selecto_updato, [path: ^updato_root, override: true]} =
+                   apply(SelectoLivebooksNotebookBootstrap, :updato_dep, [])
+        end
+      )
     end
   end
 
@@ -120,15 +128,69 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     selecto_root = Path.expand("../selecto", @repo_root)
     selecto_db_postgresql_root = Path.expand("../selecto_db_postgresql", @repo_root)
 
-    if File.dir?(selecto_root) do
-      assert {:selecto, [path: ^selecto_root, override: true]} =
-               apply(SelectoLivebooksNotebookBootstrap, :selecto_dep, [])
-    end
+    with_env(
+      %{
+        "SELECTO_ECOSYSTEM_USE_LOCAL" => "1",
+        "SELECTO_LIVE_SELECTO_PATH" => nil,
+        "SELECTO_LIVE_SELECTO_DB_POSTGRESQL_PATH" => nil
+      },
+      fn ->
+        if File.dir?(selecto_root) do
+          assert {:selecto, [path: ^selecto_root, override: true]} =
+                   apply(SelectoLivebooksNotebookBootstrap, :selecto_dep, [])
+        end
 
-    if File.dir?(selecto_db_postgresql_root) do
-      assert {:selecto_db_postgresql, [path: ^selecto_db_postgresql_root, override: true]} =
-               apply(SelectoLivebooksNotebookBootstrap, :selecto_db_postgresql_dep, [])
-    end
+        if File.dir?(selecto_db_postgresql_root) do
+          assert {:selecto_db_postgresql, [path: ^selecto_db_postgresql_root, override: true]} =
+                   apply(SelectoLivebooksNotebookBootstrap, :selecto_db_postgresql_dep, [])
+        end
+      end
+    )
+  end
+
+  test "bootstrap standalone mode uses coordinated immutable Git revisions" do
+    bootstrap_path = Path.join(@livebook_dir, "support/bootstrap.exs")
+    Code.require_file(bootstrap_path)
+
+    with_env(
+      %{
+        "SELECTO_ECOSYSTEM_USE_LOCAL" => "0",
+        "SELECTO_LIVE_SELECTO_PATH" => nil,
+        "SELECTO_LIVE_SELECTO_DB_POSTGRESQL_PATH" => nil,
+        "SELECTO_LIVE_SELECTO_UPDATO_PATH" => nil,
+        "SELECTO_LIVE_SELECTO_COMPONENTS_PATH" => nil
+      },
+      fn ->
+        assert {:selecto,
+                [
+                  git: "https://github.com/seeken/selecto.git",
+                  ref: "8acc72d1abfaba02f58bf533fe59cf7e5bc291ea",
+                  override: true
+                ]} = apply(SelectoLivebooksNotebookBootstrap, :selecto_dep, [])
+
+        assert {:selecto_db_postgresql,
+                [
+                  git: "https://github.com/selecto-elixir/selecto_db_postgresql.git",
+                  ref: "cf5b325f7d8808f06bc04ab05aa9daaa8f244e08",
+                  override: true
+                ]} =
+                 apply(SelectoLivebooksNotebookBootstrap, :selecto_db_postgresql_dep, [])
+
+        assert {:selecto_updato,
+                [
+                  git: "https://github.com/seeken/selecto_updato.git",
+                  ref: "95dc0bb8438dba2d001d3e3f30beaff05ff617ce",
+                  override: true
+                ]} = apply(SelectoLivebooksNotebookBootstrap, :updato_dep, [])
+
+        assert {:selecto_components,
+                [
+                  git: "https://github.com/seeken/selecto_components.git",
+                  ref: "b072e50dcaa090a6aa6bd8022e3eb2f6be297d2b",
+                  override: true
+                ]} = apply(SelectoLivebooksNotebookBootstrap, :components_dep, [])
+      end
+    )
   end
 
   test "bootstrap exposes repo config for Livebook Mix.install startup" do
@@ -317,6 +379,160 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     assert params == ["delivered", 500]
   end
 
+  test "strict-mode workbook boundary compiles governed SQL and rejects caller SQL" do
+    strict_query = Selecto.configure(strict_mode_domain(), :mock_connection, mode: :strict)
+
+    query =
+      strict_query
+      |> Selecto.join(:team)
+      |> Selecto.select(["status", "team.name", "status_upper"])
+      |> Selecto.filter({"status", "open"})
+
+    assert :ok = Selecto.Policy.validate_query!(query)
+    {sql, params} = Selecto.to_sql(query)
+
+    assert sql =~ "join teams"
+    assert sql =~ "UPPER(selecto_root.status)"
+    assert params == ["open"]
+
+    assert_raise Selecto.PolicyViolation, ~r/query-authored :raw_sql/, fn ->
+      strict_query |> Selecto.select({:raw_sql, "current_user"})
+    end
+
+    tampered = put_in(strict_query.domain[:source][:source_table], "other_orders")
+
+    assert_raise Selecto.PolicyViolation, ~r/domain changed after strict mode sealed it/, fn ->
+      tampered |> Selecto.select(["id"]) |> Selecto.to_sql()
+    end
+  end
+
+  test "filtered set operands retain parameter order under outer composition" do
+    domain = set_operation_domain()
+
+    left =
+      domain
+      |> Selecto.configure(:mock_connection)
+      |> Selecto.select(["title", "rental_rate"])
+      |> Selecto.filter({"rating", "PG"})
+
+    right =
+      domain
+      |> Selecto.configure(:mock_connection)
+      |> Selecto.select(["title", "rental_rate"])
+      |> Selecto.filter({"rating", "G"})
+
+    query =
+      Selecto.union(left, right, all: true)
+      |> Selecto.order_by({"title", :asc})
+      |> Selecto.limit(5)
+
+    {sql, params} = Selecto.to_sql(query)
+
+    assert sql =~ "selecto_root.rating = $1"
+    assert sql =~ "selecto_root.rating = $2"
+    assert sql =~ ~r/ORDER BY\s+1\s+asc/i
+    assert sql =~ ~r/LIMIT\s+5/i
+    assert params == ["PG", "G"]
+  end
+
+  test "non-connecting ecosystem verification reports prove their finite models" do
+    reports = [
+      Selecto.Verification.ContractSafety.verify(),
+      SelectoUpdato.Verification.WriteSafety.verify(),
+      SelectoUpdato.Verification.ActionSafety.verify(),
+      SelectoComponents.Verification.ActionVisibility.verify()
+    ]
+
+    assert Enum.all?(reports, &(&1.proof_level == :bounded_exhaustive))
+    assert Enum.all?(reports, & &1.proved?), inspect(reports, pretty: true)
+
+    selecto = %Selecto{adapter: SelectoDBPostgreSQL.Adapter, connection: :preview_only}
+    assert {:ok, report} = Selecto.Write.AdapterConformance.check(selecto)
+    assert report.operations == [:insert, :update, :upsert, :delete]
+    assert length(report.batch_preview.statements) == 4
+
+    Code.require_file(Path.join(@livebook_dir, "support/bootstrap.exs"))
+
+    assert apply(SelectoLivebooksNotebookBootstrap, :verification_deps, [])
+           |> Enum.map(&elem(&1, 0)) == [:selecto, :selecto_updato, :selecto_components]
+  end
+
+  test "column defaults feed the shared Aggregate and Graph analytical shape" do
+    selecto = Selecto.configure(analytics_domain(), :mock_connection)
+
+    assert SelectoComponents.Views.Analytic.Defaults.group_by(selecto) == [
+             {"booked_at", %{"format" => "month"}},
+             {"region", %{"format" => "default"}}
+           ]
+
+    assert SelectoComponents.Views.Analytic.Defaults.aggregate(selecto) == [
+             {"hours", %{"format" => "sum"}}
+           ]
+
+    view_config = %{
+      view_mode: "aggregate",
+      filters: [],
+      views: %{
+        aggregate: %{
+          group_by: [{"g-1", "booked_at", %{"format" => "month"}}],
+          aggregate: [{"a-1", "hours", %{"format" => "sum"}}]
+        },
+        graph: %{
+          group_by: [],
+          aggregate: [],
+          visual: %{type: "bar", series: [], options: %{}}
+        }
+      }
+    }
+
+    graph_config = SelectoComponents.Form.ParamsState.copy_aggregate_to_graph(view_config)
+
+    assert graph_config.view_mode == "graph"
+    assert graph_config.views.graph.group_by == view_config.views.aggregate.group_by
+    assert graph_config.views.graph.aggregate == view_config.views.aggregate.aggregate
+    assert graph_config.views.graph.visual.type == "bar"
+
+    params = SelectoComponents.Form.ParamsState.view_config_to_params(graph_config)
+
+    assert params["graph_chart_type"] == "bar"
+    assert params["graph_options"] == %{}
+    assert params["graph_group_by"]["k0"]["field"] == "booked_at"
+    assert params["graph_aggregate"]["k0"]["field"] == "hours"
+
+    assert SelectoComponents.Form.FilterRendering.static_filter_options(%{
+             options: [
+               "Ready to reserve",
+               {"Needs attention", "attention"},
+               %{label: "Retired", value: "retired"}
+             ]
+           }) == [
+             {"Ready to reserve", "Ready to reserve"},
+             {"attention", "Needs attention"},
+             {"retired", "Retired"}
+           ]
+  end
+
+  test "new workbooks carry the current feature boundaries" do
+    strict = File.read!(Path.join(@livebook_dir, "selecto_strict_mode_workbook.livemd"))
+    verification = File.read!(Path.join(@livebook_dir, "selecto_verification_workbook.livemd"))
+
+    analytics =
+      File.read!(Path.join(@livebook_dir, "selecto_components_analytics_workbook.livemd"))
+
+    updato = File.read!(Path.join(@livebook_dir, "selecto_updato_feature_tour.livemd"))
+
+    assert strict =~ "mode: :strict"
+    assert strict =~ "domain_sql: :forbid"
+    assert verification =~ "Selecto.Verification.QuerySafety.verify()"
+    assert verification =~ "SelectoComponents.Verification.ActionVisibility.verify()"
+    assert analytics =~ "SelectoComponents.Views.Analytic.Defaults"
+    assert analytics =~ "copy_aggregate_to_graph"
+    assert analytics =~ "static_filter_options"
+    assert updato =~ "SelectoUpdato 0.3"
+    assert updato =~ "Selecto.Write.AdapterConformance.check"
+    assert updato =~ "cardinality_mismatch"
+  end
+
   defp elixir_cells(path) do
     path
     |> File.read!()
@@ -382,5 +598,100 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
         }
       }
     }
+  end
+
+  defp strict_mode_domain do
+    %{
+      name: "Strict orders",
+      source: %{
+        source_table: "orders",
+        primary_key: :id,
+        fields: [:id, :status, :total, :team_id],
+        redact_fields: [],
+        columns: %{
+          id: %{type: :integer},
+          status: %{type: :string},
+          total: %{type: :decimal},
+          team_id: %{type: :integer}
+        },
+        associations: %{
+          team: %{queryable: :team, field: :team, owner_key: :team_id, related_key: :id}
+        }
+      },
+      schemas: %{
+        team: %{
+          source_table: "teams",
+          primary_key: :id,
+          fields: [:id, :name],
+          redact_fields: [],
+          columns: %{id: %{type: :integer}, name: %{type: :string}},
+          associations: %{}
+        }
+      },
+      joins: %{team: %{name: "Team", type: :left, display_field: :name}},
+      custom_columns: %{
+        "status_upper" => %{select: "UPPER(selecto_root.status)", type: :string}
+      }
+    }
+  end
+
+  defp set_operation_domain do
+    %{
+      name: "Films",
+      source: %{
+        source_table: "film",
+        primary_key: :film_id,
+        fields: [:film_id, :title, :rental_rate, :rating],
+        redact_fields: [],
+        columns: %{
+          film_id: %{type: :integer},
+          title: %{type: :string},
+          rental_rate: %{type: :decimal},
+          rating: %{type: :string}
+        },
+        associations: %{}
+      },
+      schemas: %{},
+      joins: %{}
+    }
+  end
+
+  defp analytics_domain do
+    %{
+      name: "Bookings",
+      source: %{
+        source_table: "bookings",
+        primary_key: :id,
+        fields: [:id, :booked_at, :region, :hours],
+        redact_fields: [],
+        columns: %{
+          id: %{type: :integer},
+          booked_at: %{type: :utc_datetime, default_grouping: :month},
+          region: %{type: :string, default_grouping: :default},
+          hours: %{type: :integer, default_aggregate: :sum}
+        },
+        associations: %{}
+      },
+      schemas: %{},
+      joins: %{}
+    }
+  end
+
+  defp with_env(changes, fun) do
+    previous = Map.new(changes, fn {name, _value} -> {name, System.get_env(name)} end)
+
+    Enum.each(changes, fn
+      {name, nil} -> System.delete_env(name)
+      {name, value} -> System.put_env(name, value)
+    end)
+
+    try do
+      fun.()
+    after
+      Enum.each(previous, fn
+        {name, nil} -> System.delete_env(name)
+        {name, value} -> System.put_env(name, value)
+      end)
+    end
   end
 end

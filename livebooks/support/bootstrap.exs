@@ -6,6 +6,12 @@ defmodule SelectoLivebooksNotebookBootstrap do
   @selecto_root Path.join(@workspace_root, "selecto")
   @selecto_db_postgresql_root Path.join(@workspace_root, "selecto_db_postgresql")
   @updato_root Path.join(@workspace_root, "selecto_updato")
+  @components_root Path.join(@workspace_root, "selecto_components")
+
+  @selecto_ref "8acc72d1abfaba02f58bf533fe59cf7e5bc291ea"
+  @selecto_db_postgresql_ref "cf5b325f7d8808f06bc04ab05aa9daaa8f244e08"
+  @selecto_updato_ref "95dc0bb8438dba2d001d3e3f30beaff05ff617ce"
+  @selecto_components_ref "b072e50dcaa090a6aa6bd8022e3eb2f6be297d2b"
 
   def install!(extra_deps \\ []) do
     selecto_livebooks_dep = {:selecto_livebooks, path: @project_root, override: true}
@@ -40,6 +46,17 @@ defmodule SelectoLivebooksNotebookBootstrap do
     [selecto_dep(), selecto_db_postgresql_dep(), updato_dep()]
   end
 
+  def core_deps do
+    [selecto_dep(), {:kino, "~> 0.12"}]
+  end
+
+  def install_core! do
+    Mix.install(core_deps())
+
+    IO.puts("Using Selecto dependency: #{inspect(selecto_dep())}")
+    :ok
+  end
+
   def install_updato! do
     Mix.install(updato_deps())
 
@@ -47,6 +64,31 @@ defmodule SelectoLivebooksNotebookBootstrap do
     IO.puts("Using Selecto DB PostgreSQL dependency: #{inspect(selecto_db_postgresql_dep())}")
     IO.puts("Using SelectoUpdato dependency: #{inspect(updato_dep())}")
     IO.puts("Updato setup uses Postgrex directly; no Ecto repo configuration was installed.")
+    :ok
+  end
+
+  def components_deps do
+    [selecto_dep(), components_dep(), {:kino, "~> 0.12"}]
+  end
+
+  def install_components! do
+    Mix.install(components_deps())
+
+    IO.puts("Using Selecto dependency: #{inspect(selecto_dep())}")
+    IO.puts("Using SelectoComponents dependency: #{inspect(components_dep())}")
+    :ok
+  end
+
+  def verification_deps do
+    [selecto_dep(), updato_dep(), components_dep()]
+  end
+
+  def install_verification! do
+    Mix.install(verification_deps())
+
+    IO.puts("Using Selecto dependency: #{inspect(selecto_dep())}")
+    IO.puts("Using SelectoUpdato dependency: #{inspect(updato_dep())}")
+    IO.puts("Using SelectoComponents dependency: #{inspect(components_dep())}")
     :ok
   end
 
@@ -62,26 +104,67 @@ defmodule SelectoLivebooksNotebookBootstrap do
   end
 
   def selecto_dep do
-    if File.dir?(@selecto_root) do
-      {:selecto, path: @selecto_root, override: true}
-    else
-      {:selecto, ">= 0.4.10 and < 0.6.0", override: true}
-    end
+    source_dep(
+      :selecto,
+      "SELECTO_LIVE_SELECTO_PATH",
+      @selecto_root,
+      "https://github.com/seeken/selecto.git",
+      @selecto_ref
+    )
   end
 
   def selecto_db_postgresql_dep do
-    if File.dir?(@selecto_db_postgresql_root) do
-      {:selecto_db_postgresql, path: @selecto_db_postgresql_root, override: true}
-    else
-      {:selecto_db_postgresql, ">= 0.4.8 and < 0.6.0", override: true}
-    end
+    source_dep(
+      :selecto_db_postgresql,
+      "SELECTO_LIVE_SELECTO_DB_POSTGRESQL_PATH",
+      @selecto_db_postgresql_root,
+      "https://github.com/selecto-elixir/selecto_db_postgresql.git",
+      @selecto_db_postgresql_ref
+    )
   end
 
   def updato_dep do
-    if File.dir?(@updato_root) do
-      {:selecto_updato, path: @updato_root, override: true}
-    else
-      {:selecto_updato, ">= 0.3.0 and < 0.4.0", override: true}
+    source_dep(
+      :selecto_updato,
+      "SELECTO_LIVE_SELECTO_UPDATO_PATH",
+      @updato_root,
+      "https://github.com/seeken/selecto_updato.git",
+      @selecto_updato_ref
+    )
+  end
+
+  def components_dep do
+    source_dep(
+      :selecto_components,
+      "SELECTO_LIVE_SELECTO_COMPONENTS_PATH",
+      @components_root,
+      "https://github.com/seeken/selecto_components.git",
+      @selecto_components_ref
+    )
+  end
+
+  defp source_dep(app, path_env, sibling_root, git, ref) do
+    source =
+      case System.get_env(path_env) do
+        path when is_binary(path) and path != "" ->
+          [path: Path.expand(path)]
+
+        _ ->
+          if use_local_ecosystem?() and File.dir?(sibling_root) do
+            [path: sibling_root]
+          else
+            [git: git, ref: ref]
+          end
+      end
+
+    {app, source ++ [override: true]}
+  end
+
+  defp use_local_ecosystem? do
+    case System.get_env("SELECTO_ECOSYSTEM_USE_LOCAL") do
+      value when value in ["1", "true", "TRUE", "yes", "YES", "on", "ON"] -> true
+      value when value in ["0", "false", "FALSE", "no", "NO", "off", "OFF"] -> false
+      _ -> true
     end
   end
 

@@ -14,6 +14,9 @@ Core tours:
 - `selecto_guide_examples.livemd`
 - `selecto_selection_shapes_subselects_retargets.livemd`
 - `selecto_updato_feature_tour.livemd`
+- `selecto_strict_mode_workbook.livemd`
+- `selecto_verification_workbook.livemd`
+- `selecto_components_analytics_workbook.livemd`
 
 Focused Selecto workbooks:
 - `selecto_domain_extensions_workbook.livemd`
@@ -53,17 +56,30 @@ Focused Selecto workbooks:
 - Workbooks bootstrap through the local `selecto_livebooks` project using
   `livebooks/support/bootstrap.exs`.
 - The project prefers sibling path deps for `selecto` and
-  `selecto_db_postgresql` when the full Selecto workspace is present.
-- Outside the mono-workspace, the project falls back to released package
-  versions, so notebooks still run when `selecto_livebooks` is cloned alone.
+  related packages when the full Selecto workspace is present.
+- Outside the mono-workspace, the project uses pinned Git commits for the
+  coordinated Selecto, PostgreSQL adapter, Updato, and Components revisions.
+  This is intentional while the versions used here are newer than their Hex
+  releases; standalone installs do not claim that unpublished packages exist.
+- Set `SELECTO_ECOSYSTEM_USE_LOCAL=0` to exercise the pinned standalone path.
+  `SELECTO_LIVE_SELECTO_PATH`, `SELECTO_LIVE_SELECTO_DB_POSTGRESQL_PATH`,
+  `SELECTO_LIVE_SELECTO_UPDATO_PATH`, and
+  `SELECTO_LIVE_SELECTO_COMPONENTS_PATH` can target explicit checkouts.
 - Shared runtime setup for repo config, domain loading, and SQL health checks now
   lives in `SelectoLivebooks.NotebookSupport`.
 
 ## Current Notebook Parity Notes
 
-- Core notebook modernization is in progress. The first refresh pass moves the
-  guide, filtering, and aggregates workbooks onto shared setup helpers and adds
-  current `Selecto.ExprMacros` / `~SELECTO` examples.
+- Core workbooks use shared setup helpers and current `Selecto.ExprMacros` /
+  `~SELECTO` examples.
+- The strict-mode workbook covers validated sealed domains, governed joins and
+  domain SQL, eager raw-SQL rejection, and seal checks at compilation.
+- The verification workbook runs bounded-exhaustive read, contract, write,
+  action-authorization, and Components visibility models. The Updato tour owns
+  the PostgreSQL write-adapter conformance and transactional rollback probes.
+- The Components analytics workbook demonstrates column-local defaults and the
+  shared Aggregate-to-Graph analytical query shape introduced in Components
+  0.4.12, Graph URL-state preservation, and finite filter vocabularies.
 - Added `selecto_domain_extensions_workbook.livemd` for view-backed domains,
   published views, and overlay DSL examples that were previously missing from
   the livebook set.
@@ -77,8 +93,11 @@ Focused Selecto workbooks:
   including PG18+ behavior where rollup compatibility wrapping can be disabled.
 - Guide examples include read-side tenant scope helpers and UDF-backed scalar /
   table-function query patterns.
-- Tests now parse every Elixir Livebook cell and assert the local
-  `selecto_updato` sibling path is used when the full workspace is present.
+- Set-operation coverage includes filtered operands, globally renumbered bound
+  parameters, and outer ordering/limit composition.
+- Tests parse every Elixir Livebook cell and execute focused regressions for
+  the current strict, verification, set-operation, analytical-default, and
+  portable-write boundaries.
 
 The Updato feature tour is validated against the portable 0.3 write contract;
 the bootstrap still prefers sibling checkouts for ecosystem development.

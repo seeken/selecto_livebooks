@@ -675,6 +675,44 @@ except_actual = count_rows.(Selecto.except(cohort_a, high_value_ids))
 %{prediction: except_prediction.active_except_has_manager, actual: except_actual, delta: except_actual - except_prediction.active_except_has_manager}
 ```
 
+## 17) Filtered Operands with Outer Ordering and Limit
+
+Current Selecto finalizes a set expression once, after composing all operands.
+That keeps bound values from each filtered operand in order and gives the
+combined result its own positional `ORDER BY`, `LIMIT`, and `OFFSET` scope.
+
+```elixir
+engineering_employees =
+  Selecto.configure(config.employee_domain, config.repo)
+  |> Selecto.select(["id", "first_name", "last_name", "title"])
+  |> Selecto.filter({"department", "Engineering"})
+
+managers_by_title =
+  Selecto.configure(config.employee_domain, config.repo)
+  |> Selecto.select(["id", "first_name", "last_name", "title"])
+  |> Selecto.filter({"title", {:like, "%Manager%"}})
+
+composable_set_query =
+  Selecto.union(engineering_employees, managers_by_title, all: true)
+  |> Selecto.order_by({"title", :asc})
+  |> Selecto.limit(12)
+
+{composable_sql, composable_params} = Selecto.to_sql(composable_set_query)
+["Engineering", "%Manager%"] = composable_params
+
+%{
+  sql: composable_sql,
+  params: composable_params,
+  result:
+    SetOpsLab.Helpers.run(
+      "Filtered UNION ALL with outer composition",
+      "Each operand keeps its filter; ordering and limit apply to the combined result.",
+      composable_set_query,
+      12
+    )
+}
+```
+
 ## Next Steps
 
 To extend this workbook further, add:

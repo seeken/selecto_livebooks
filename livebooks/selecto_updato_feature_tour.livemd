@@ -2,7 +2,7 @@
 
 ## Overview
 
-This notebook is a runnable tour of SelectoUpdato 0.2's deliberately small
+This notebook is a runnable tour of SelectoUpdato 0.3's deliberately small
 write surface. Updato validates domain-governed intent and compiles a portable
 command; the configured database adapter owns SQL, driver interaction,
 transactions, and affected-row cardinality checks.
@@ -14,6 +14,25 @@ configuration in this write path.
 Code.require_file(Path.expand("support/bootstrap.exs", __DIR__))
 
 SelectoLivebooksNotebookBootstrap.install_updato!()
+```
+
+## Bounded proof reports
+
+The packaged verification models check every state in their declared finite
+write-scope and action-authorization spaces. These are bounded proofs, not a
+claim about arbitrary adapters or host callbacks.
+
+```elixir
+write_safety_report = SelectoUpdato.Verification.WriteSafety.verify()
+action_safety_report = SelectoUpdato.Verification.ActionSafety.verify()
+
+true = write_safety_report.proved?
+true = action_safety_report.proved?
+
+%{
+  write_scope: Map.take(write_safety_report, [:proof_level, :state_count, :check_count]),
+  action_capability: Map.take(action_safety_report, [:proof_level, :state_count, :check_count])
+}
 ```
 
 ## The boundary
@@ -149,6 +168,26 @@ selecto = %Selecto{
 context = %{tenant_id: tenant_id, account_id: account_id}
 ```
 
+## Adapter conformance without mutation
+
+The core conformance suite asks the configured adapter to preview every
+portable operation plus an atomic batch. It validates advertised transaction
+capabilities and preview shapes without executing a write.
+
+```elixir
+{:ok, adapter_conformance} =
+  Selecto.Write.AdapterConformance.check(selecto,
+    relation: items_table,
+    context: context
+  )
+
+%{
+  operations: adapter_conformance.operations,
+  capabilities: adapter_conformance.capabilities,
+  batch_statement_count: length(adapter_conformance.batch_preview.statements)
+}
+```
+
 ## Preview: adapter-owned parameterized SQL
 
 Updato produces portable command data. The PostgreSQL adapter turns it into a
@@ -227,6 +266,42 @@ IO.inspect(upsert_preview, label: "Upsert preview")
 
 {:ok, upserted} = SelectoUpdato.execute(upsert_operation, selecto, context: context)
 upserted
+```
+
+## Transactional cardinality rollback
+
+Portable commands carry expected cardinality. The PostgreSQL adapter executes
+an individual command in a transaction, so a mismatch rolls back the tentative
+mutation instead of returning an error after a partial commit.
+
+```elixir
+{:ok, rollback_probe} =
+  Selecto.Write.Command.new(%{
+    operation: :update,
+    relation: items_table,
+    assignments: [%{field: :state, value: {:literal, "should-roll-back"}}],
+    predicate:
+      {:and,
+       [
+         {:eq, {:field, :tenant_id}, {:literal, tenant_id}},
+         {:eq, {:field, :external_id}, {:literal, run_id}}
+       ]},
+    expected_cardinality: {:exactly, 2}
+  })
+
+{:error, rollback_error} =
+  SelectoDBPostgreSQL.Adapter.execute_write(connection, rollback_probe)
+
+:cardinality_mismatch = rollback_error.type
+
+%Postgrex.Result{rows: [["active"]]} =
+  Postgrex.query!(
+    connection,
+    "SELECT state FROM #{items_table} WHERE tenant_id = $1 AND external_id = $2",
+    [tenant_id, run_id]
+  )
+
+%{error: rollback_error, persisted_state: "active"}
 ```
 
 ## Delete and cleanup

@@ -1,6 +1,11 @@
 defmodule SelectoLivebooks.MixProject do
   use Mix.Project
 
+  @selecto_ref "8acc72d1abfaba02f58bf533fe59cf7e5bc291ea"
+  @selecto_db_postgresql_ref "cf5b325f7d8808f06bc04ab05aa9daaa8f244e08"
+  @selecto_updato_ref "95dc0bb8438dba2d001d3e3f30beaff05ff617ce"
+  @selecto_components_ref "b072e50dcaa090a6aa6bd8022e3eb2f6be297d2b"
+
   def project do
     [
       app: :selecto_livebooks,
@@ -26,32 +31,65 @@ defmodule SelectoLivebooks.MixProject do
       selecto_dep(),
       selecto_db_postgresql_dep(),
       selecto_updato_dep(),
+      selecto_components_dep(),
       {:jason, "~> 1.4"},
       {:decimal, "~> 2.0"}
     ]
   end
 
   defp selecto_dep do
-    if use_local_ecosystem?() do
-      {:selecto, path: "../selecto", override: true}
-    else
-      {:selecto, ">= 0.4.10 and < 0.6.0", override: true}
-    end
+    {:selecto,
+     dependency_source(
+       "SELECTO_LIVE_SELECTO_PATH",
+       "../selecto",
+       "https://github.com/seeken/selecto.git",
+       @selecto_ref
+     ) ++ [override: true]}
   end
 
   defp selecto_db_postgresql_dep do
-    if use_local_ecosystem?() do
-      {:selecto_db_postgresql, path: "../selecto_db_postgresql", override: true}
-    else
-      {:selecto_db_postgresql, ">= 0.4.8 and < 0.6.0", override: true}
-    end
+    {:selecto_db_postgresql,
+     dependency_source(
+       "SELECTO_LIVE_SELECTO_DB_POSTGRESQL_PATH",
+       "../selecto_db_postgresql",
+       "https://github.com/selecto-elixir/selecto_db_postgresql.git",
+       @selecto_db_postgresql_ref
+     ) ++ [override: true]}
   end
 
   defp selecto_updato_dep do
-    if use_local_ecosystem?() do
-      {:selecto_updato, path: "../selecto_updato", override: true, only: :test}
-    else
-      {:selecto_updato, ">= 0.3.0 and < 0.4.0", override: true, only: :test}
+    {:selecto_updato,
+     dependency_source(
+       "SELECTO_LIVE_SELECTO_UPDATO_PATH",
+       "../selecto_updato",
+       "https://github.com/seeken/selecto_updato.git",
+       @selecto_updato_ref
+     ) ++ [override: true, only: :test]}
+  end
+
+  defp selecto_components_dep do
+    {:selecto_components,
+     dependency_source(
+       "SELECTO_LIVE_SELECTO_COMPONENTS_PATH",
+       "../selecto_components",
+       "https://github.com/seeken/selecto_components.git",
+       @selecto_components_ref
+     ) ++ [override: true, only: :test]}
+  end
+
+  defp dependency_source(path_env, sibling_path, git, ref) do
+    case System.get_env(path_env) do
+      path when is_binary(path) and path != "" ->
+        [path: Path.expand(path)]
+
+      _ ->
+        path = Path.expand(sibling_path, __DIR__)
+
+        if use_local_ecosystem?() and File.dir?(path) do
+          [path: path]
+        else
+          [git: git, ref: ref]
+        end
     end
   end
 
