@@ -65,7 +65,7 @@ defmodule SelectoLivebooksNotebookBootstrap do
     if File.dir?(@selecto_root) do
       {:selecto, path: @selecto_root, override: true}
     else
-      {:selecto, ">= 0.4.9 and < 0.6.0", override: true}
+      {:selecto, ">= 0.4.10 and < 0.6.0", override: true}
     end
   end
 
@@ -73,7 +73,7 @@ defmodule SelectoLivebooksNotebookBootstrap do
     if File.dir?(@selecto_db_postgresql_root) do
       {:selecto_db_postgresql, path: @selecto_db_postgresql_root, override: true}
     else
-      {:selecto_db_postgresql, ">= 0.4.7 and < 0.6.0", override: true}
+      {:selecto_db_postgresql, ">= 0.4.8 and < 0.6.0", override: true}
     end
   end
 
@@ -81,7 +81,7 @@ defmodule SelectoLivebooksNotebookBootstrap do
     if File.dir?(@updato_root) do
       {:selecto_updato, path: @updato_root, override: true}
     else
-      {:selecto_updato, ">= 0.2.1 and < 0.3.0", override: true}
+      {:selecto_updato, ">= 0.3.0 and < 0.4.0", override: true}
     end
   end
 

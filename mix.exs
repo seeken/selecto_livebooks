@@ -35,7 +35,7 @@ defmodule SelectoLivebooks.MixProject do
     if use_local_ecosystem?() do
       {:selecto, path: "../selecto", override: true}
     else
-      {:selecto, ">= 0.4.0 and < 0.6.0", override: true}
+      {:selecto, ">= 0.4.10 and < 0.6.0", override: true}
     end
   end
 
@@ -43,7 +43,7 @@ defmodule SelectoLivebooks.MixProject do
     if use_local_ecosystem?() do
       {:selecto_db_postgresql, path: "../selecto_db_postgresql", override: true}
     else
-      {:selecto_db_postgresql, ">= 0.4.0 and < 0.6.0", override: true}
+      {:selecto_db_postgresql, ">= 0.4.8 and < 0.6.0", override: true}
     end
   end
 
@@ -51,7 +51,7 @@ defmodule SelectoLivebooks.MixProject do
     if use_local_ecosystem?() do
       {:selecto_updato, path: "../selecto_updato", override: true, only: :test}
     else
-      {:selecto_updato, ">= 0.2.1 and < 0.3.0", override: true, only: :test}
+      {:selecto_updato, ">= 0.3.0 and < 0.4.0", override: true, only: :test}
     end
   end
 

@@ -80,8 +80,8 @@ Focused Selecto workbooks:
 - Tests now parse every Elixir Livebook cell and assert the local
   `selecto_updato` sibling path is used when the full workspace is present.
 
-Dependency requirement bumps are intentionally deferred until notebook behavior
-is re-validated end-to-end in your environment.
+The Updato feature tour is validated against the portable 0.3 write contract;
+the bootstrap still prefers sibling checkouts for ecosystem development.
 
 ## Database Model
 
