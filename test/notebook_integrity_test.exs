@@ -27,6 +27,92 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     end
   end
 
+  test "Updato bootstrap is Ecto-free and includes the three portable write packages" do
+    bootstrap_path = Path.join(@livebook_dir, "support/bootstrap.exs")
+    Code.require_file(bootstrap_path)
+
+    deps = apply(SelectoLivebooksNotebookBootstrap, :updato_deps, [])
+
+    assert Enum.map(deps, &elem(&1, 0)) == [
+             :selecto,
+             :selecto_db_postgresql,
+             :selecto_updato
+           ]
+
+    refute Enum.any?(deps, &(elem(&1, 0) in [:ecto, :ecto_sql, :selecto_livebooks]))
+
+    notebook = File.read!(Path.join(@livebook_dir, "selecto_updato_feature_tour.livemd"))
+    assert notebook =~ "SelectoLivebooksNotebookBootstrap.install_updato!()"
+    assert notebook =~ "System.unique_integer([:positive, :monotonic])"
+    assert notebook =~ "Keyword.put(:pool_size, 1)"
+    assert notebook =~ "GenServer.stop(connection)"
+    refute notebook =~ "SelectoLivebooksNotebookBootstrap.install!([updato_dep])"
+    refute notebook =~ "Postgrex.stop(connection)"
+  end
+
+  test "Updato feature-tour domain previews safe adapter-owned writes without a database" do
+    domain = updato_feature_tour_domain()
+
+    selecto = %Selecto{
+      domain: domain,
+      adapter: SelectoDBPostgreSQL.Adapter,
+      connection: :unused
+    }
+
+    context = %{tenant_id: 70_001, account_id: 80_001}
+
+    insert =
+      domain
+      |> SelectoUpdato.new()
+      |> SelectoUpdato.insert(%{external_id: "preview-1", name: "Preview", state: "open"})
+
+    assert {:ok, %{statements: [%{text: insert_sql}]}} =
+             SelectoUpdato.preview(insert, selecto, context: context)
+
+    assert insert_sql =~ ~s/INSERT INTO "updato_feature_tour_items"/
+    assert insert_sql =~ ~s/EXISTS (SELECT 1 FROM "updato_feature_tour_accounts"/
+
+    update =
+      domain
+      |> SelectoUpdato.new()
+      |> SelectoUpdato.filter({:external_id, "preview-1"})
+      |> SelectoUpdato.update(%{state: "active"})
+
+    assert {:ok, %{statements: [%{text: update_sql}]}} =
+             SelectoUpdato.preview(update, selecto, context: context)
+
+    assert update_sql =~ ~s/"tenant_id" = $3/
+
+    upsert =
+      domain
+      |> SelectoUpdato.new()
+      |> SelectoUpdato.upsert(%{
+        external_id: "preview-1",
+        name: "Upsert preview",
+        state: "active"
+      })
+
+    assert {:ok, %{statements: [%{text: upsert_sql}]}} =
+             SelectoUpdato.preview(upsert, selecto, context: context)
+
+    assert upsert_sql =~ ~s/ON CONFLICT ("tenant_id", "external_id")/
+    assert upsert_sql =~ ~s/DO UPDATE SET "name" = EXCLUDED."name", "state" = EXCLUDED."state"/
+    refute upsert_sql =~ ~s/SET "tenant_id"/
+    refute upsert_sql =~ ~s/, "tenant_id" = EXCLUDED/
+    refute upsert_sql =~ ~s/, "account_id" = EXCLUDED/
+    refute upsert_sql =~ ~s/, "external_id" = EXCLUDED/
+
+    forged =
+      domain
+      |> SelectoUpdato.new()
+      |> SelectoUpdato.filter({:tenant_id, 70_002})
+      |> SelectoUpdato.filter({:external_id, "preview-1"})
+      |> SelectoUpdato.update(%{state: "forged"})
+
+    assert {:error, %{type: :tenant_mismatch}} =
+             SelectoUpdato.preview(forged, selecto, context: context)
+  end
+
   test "bootstrap prefers sibling Selecto ecosystem checkouts when present" do
     bootstrap_path = Path.join(@livebook_dir, "support/bootstrap.exs")
     Code.require_file(bootstrap_path)
@@ -245,5 +331,56 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
 
       {path, index, source}
     end)
+  end
+
+  defp updato_feature_tour_domain do
+    %{
+      name: "Updato feature-tour items",
+      source: %{
+        source_table: "updato_feature_tour_items",
+        primary_key: :id,
+        fields: [:id, :tenant_id, :account_id, :external_id, :name, :state],
+        columns: %{
+          id: %{type: :integer},
+          tenant_id: %{type: :integer},
+          account_id: %{type: :integer},
+          external_id: %{type: :string},
+          name: %{type: :string},
+          state: %{type: :string}
+        },
+        associations: %{}
+      },
+      schemas: %{},
+      writes: %{
+        operations: %{
+          insert: %{enabled: true, expected_cardinality: {:exactly, 1}},
+          update: %{enabled: true, expected_cardinality: {:exactly, 1}},
+          upsert: %{
+            enabled: true,
+            expected_cardinality: {:exactly, 1},
+            conflict_targets: [[:tenant_id, :external_id]]
+          },
+          delete: %{enabled: true, expected_cardinality: {:exactly, 1}}
+        },
+        fields: %{
+          id: %{insertable: false, updatable: false},
+          tenant_id: %{insertable: true, updatable: false, immutable: true},
+          account_id: %{insertable: true, updatable: false, immutable: true},
+          external_id: %{insertable: true, updatable: false, immutable: true},
+          name: %{insertable: true, updatable: true},
+          state: %{insertable: true, updatable: true}
+        },
+        scope: %{tenant: %{required: true, field: :tenant_id}},
+        constraints: %{
+          foreign_keys: %{
+            account_id: %{
+              source: {:context, :account_id},
+              references: %{relation: "updato_feature_tour_accounts", field: :id},
+              required: true
+            }
+          }
+        }
+      }
+    }
   end
 end

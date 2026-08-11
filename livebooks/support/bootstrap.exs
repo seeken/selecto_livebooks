@@ -36,6 +36,20 @@ defmodule SelectoLivebooksNotebookBootstrap do
     :ok
   end
 
+  def updato_deps do
+    [selecto_dep(), selecto_db_postgresql_dep(), updato_dep()]
+  end
+
+  def install_updato! do
+    Mix.install(updato_deps())
+
+    IO.puts("Using Selecto dependency: #{inspect(selecto_dep())}")
+    IO.puts("Using Selecto DB PostgreSQL dependency: #{inspect(selecto_db_postgresql_dep())}")
+    IO.puts("Using SelectoUpdato dependency: #{inspect(updato_dep())}")
+    IO.puts("Updato setup uses Postgrex directly; no Ecto repo configuration was installed.")
+    :ok
+  end
+
   def repo_config do
     [
       database: env("SELECTO_LIVEBOOKS_DB", "selecto_livebooks_dev"),
@@ -51,7 +65,7 @@ defmodule SelectoLivebooksNotebookBootstrap do
     if File.dir?(@selecto_root) do
       {:selecto, path: @selecto_root, override: true}
     else
-      {:selecto, ">= 0.4.0 and < 0.6.0", override: true}
+      {:selecto, ">= 0.4.9 and < 0.6.0", override: true}
     end
   end
 
@@ -59,7 +73,7 @@ defmodule SelectoLivebooksNotebookBootstrap do
     if File.dir?(@selecto_db_postgresql_root) do
       {:selecto_db_postgresql, path: @selecto_db_postgresql_root, override: true}
     else
-      {:selecto_db_postgresql, ">= 0.4.0 and < 0.6.0", override: true}
+      {:selecto_db_postgresql, ">= 0.4.7 and < 0.6.0", override: true}
     end
   end
 
@@ -67,7 +81,7 @@ defmodule SelectoLivebooksNotebookBootstrap do
     if File.dir?(@updato_root) do
       {:selecto_updato, path: @updato_root, override: true}
     else
-      {:selecto_updato, ">= 0.1.0 and < 0.3.0", override: true}
+      {:selecto_updato, ">= 0.2.1 and < 0.3.0", override: true}
     end
   end
 

@@ -1,5 +1,7 @@
 # SelectoUpdato: Portable, Adapter-Owned Writes
 
+## Overview
+
 This notebook is a runnable tour of SelectoUpdato 0.2's deliberately small
 write surface. Updato validates domain-governed intent and compiles a portable
 command; the configured database adapter owns SQL, driver interaction,
@@ -11,10 +13,7 @@ configuration in this write path.
 ```elixir
 Code.require_file(Path.expand("support/bootstrap.exs", __DIR__))
 
-updato_dep = SelectoLivebooksNotebookBootstrap.updato_dep()
-SelectoLivebooksNotebookBootstrap.install!([updato_dep])
-
-IO.puts("Using SelectoUpdato dependency: #{inspect(updato_dep)}")
+SelectoLivebooksNotebookBootstrap.install_updato!()
 ```
 
 ## The boundary
@@ -34,23 +33,32 @@ parameters.
 
 ## Setup: a direct Postgrex connection and isolated tables
 
-The setup uses Postgrex only to create isolated demonstration tables. The
-write examples below go through the Selecto write adapter, not raw SQL.
+The setup uses Postgrex only to create isolated demonstration tables. Temporary
+tables belong to one PostgreSQL session, so this notebook deliberately uses a
+single-connection pool. The write examples below go through the Selecto write
+adapter, not raw SQL.
 
 ```elixir
-{:ok, connection} = Postgrex.start_link(SelectoLivebooksNotebookBootstrap.repo_config())
+connection_config =
+  SelectoLivebooksNotebookBootstrap.repo_config()
+  |> Keyword.put(:pool_size, 1)
 
-run_id = "updato-#{System.system_time(:millisecond)}"
+{:ok, connection} = Postgrex.start_link(connection_config)
+
+run_suffix = System.unique_integer([:positive, :monotonic])
+accounts_table = "updato_feature_tour_accounts_#{run_suffix}"
+items_table = "updato_feature_tour_items_#{run_suffix}"
+run_id = "updato-#{run_suffix}"
 
 Postgrex.query!(connection, """
-CREATE TABLE IF NOT EXISTS updato_feature_tour_accounts (
+CREATE TEMP TABLE #{accounts_table} (
   id bigint PRIMARY KEY,
   tenant_id bigint NOT NULL
 )
 """, [])
 
 Postgrex.query!(connection, """
-CREATE TABLE IF NOT EXISTS updato_feature_tour_items (
+CREATE TEMP TABLE #{items_table} (
   id bigserial PRIMARY KEY,
   tenant_id bigint NOT NULL,
   account_id bigint NOT NULL,
@@ -66,9 +74,16 @@ account_id = 80_001
 
 Postgrex.query!(
   connection,
-  "INSERT INTO updato_feature_tour_accounts (id, tenant_id) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET tenant_id = EXCLUDED.tenant_id",
+  "INSERT INTO #{accounts_table} (id, tenant_id) VALUES ($1, $2)",
   [account_id, tenant_id]
 )
+
+%Postgrex.Result{rows: [[^account_id, ^tenant_id]]} =
+  Postgrex.query!(
+    connection,
+    "SELECT id, tenant_id FROM #{accounts_table} WHERE id = $1",
+    [account_id]
+  )
 ```
 
 ## Domain policy and configured Selecto
@@ -82,20 +97,26 @@ into every update and delete predicate.
 domain = %{
   name: "Updato feature-tour items",
   source: %{
-    source_table: "updato_feature_tour_items",
+    source_table: items_table,
     primary_key: :id,
     fields: [:id, :tenant_id, :account_id, :external_id, :name, :state],
     columns: %{
       id: %{type: :integer}, tenant_id: %{type: :integer},
       account_id: %{type: :integer}, external_id: %{type: :string},
       name: %{type: :string}, state: %{type: :string}
-    }
+    },
+    associations: %{}
   },
+  schemas: %{},
   writes: %{
     operations: %{
       insert: %{enabled: true, expected_cardinality: {:exactly, 1}},
       update: %{enabled: true, expected_cardinality: {:exactly, 1}},
-      upsert: %{enabled: true, expected_cardinality: {:exactly, 1}},
+      upsert: %{
+        enabled: true,
+        expected_cardinality: {:exactly, 1},
+        conflict_targets: [[:tenant_id, :external_id]]
+      },
       delete: %{enabled: true, expected_cardinality: {:exactly, 1}}
     },
     fields: %{
@@ -111,7 +132,7 @@ domain = %{
       foreign_keys: %{
         account_id: %{
           source: {:context, :account_id},
-          references: %{relation: "updato_feature_tour_accounts", field: :id},
+          references: %{relation: accounts_table, field: :id},
           required: true
         }
       }
@@ -184,19 +205,25 @@ forged_tenant_operation =
 SelectoUpdato.execute(forged_tenant_operation, selecto, context: context)
 ```
 
-## Upsert with an explicit conflict target
+## Upsert with a domain-owned conflict target
 
-Conflict behavior is deliberately narrow: the domain enables `upsert`, and the
-operation supplies a portable conflict target. Custom database conflict
-strategies are not part of the Updato API.
+Conflict behavior is deliberately narrow: the domain enables `upsert` and owns
+its one allowed conflict target, so Updato derives it without accepting policy
+from the caller. Only `name` and `state` are eligible for the conflict update;
+the tenant, account, and external identifier remain immutable.
 
 ```elixir
 upsert_operation =
   domain
   |> SelectoUpdato.new()
   |> SelectoUpdato.upsert(%{external_id: run_id, name: "Upserted portable write", state: "active"})
-  |> SelectoUpdato.conflict_target([:tenant_id, :external_id])
   |> SelectoUpdato.returning([:id, :name, :state])
+
+{:ok, upsert_preview} = SelectoUpdato.preview(upsert_operation, selecto, context: context)
+IO.inspect(upsert_preview, label: "Upsert preview")
+
+%Postgrex.Result{rows: [[^account_id]]} =
+  Postgrex.query!(connection, "SELECT id FROM #{accounts_table} WHERE id = $1", [account_id])
 
 {:ok, upserted} = SelectoUpdato.execute(upsert_operation, selecto, context: context)
 upserted
@@ -216,7 +243,7 @@ delete_operation =
   |> SelectoUpdato.delete()
 
 {:ok, deleted} = SelectoUpdato.execute(delete_operation, selecto, context: context)
-{:ok, _} = Postgrex.stop(connection)
+GenServer.stop(connection)
 
 deleted
 ```

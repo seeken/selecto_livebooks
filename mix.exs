@@ -25,6 +25,7 @@ defmodule SelectoLivebooks.MixProject do
       {:postgrex, ">= 0.17.0"},
       selecto_dep(),
       selecto_db_postgresql_dep(),
+      selecto_updato_dep(),
       {:jason, "~> 1.4"},
       {:decimal, "~> 2.0"}
     ]
@@ -43,6 +44,14 @@ defmodule SelectoLivebooks.MixProject do
       {:selecto_db_postgresql, path: "../selecto_db_postgresql", override: true}
     else
       {:selecto_db_postgresql, ">= 0.4.0 and < 0.6.0", override: true}
+    end
+  end
+
+  defp selecto_updato_dep do
+    if use_local_ecosystem?() do
+      {:selecto_updato, path: "../selecto_updato", override: true, only: :test}
+    else
+      {:selecto_updato, ">= 0.2.1 and < 0.3.0", override: true, only: :test}
     end
   end
 
