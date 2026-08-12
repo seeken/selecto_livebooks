@@ -124,10 +124,12 @@ Postgrex.query!(
 
 ## Domain policy and configured Selecto
 
-`account_id` is context-sourced: it is not accepted from user input. The
-adapter receives a reference guard so the insert can only succeed if the
-account exists. The tenant comes from trusted execution context and is bound
-into every update and delete predicate.
+This workbook uses the default-branch colocated authoring form: field write
+policy lives beside each source column. Selecto normalizes it into canonical
+`writes.fields` before Updato sees the domain. `account_id` is context-sourced:
+it is not accepted from user input. The adapter receives a reference guard so
+the insert can only succeed if the account exists. The tenant comes from
+trusted execution context and is bound into every update and delete predicate.
 
 ```elixir
 domain = %{
@@ -137,9 +139,18 @@ domain = %{
     primary_key: :id,
     fields: [:id, :tenant_id, :account_id, :external_id, :name, :state],
     columns: %{
-      id: %{type: :integer}, tenant_id: %{type: :integer},
-      account_id: %{type: :integer}, external_id: %{type: :string},
-      name: %{type: :string}, state: %{type: :string}
+      id: %{type: :integer, write: %{server_managed: true}},
+      tenant_id: %{type: :integer, write: %{insertable: true, immutable: true}},
+      account_id: %{type: :integer, write: %{insertable: true, immutable: true}},
+      external_id: %{
+        type: :string,
+        write: %{insertable: true, immutable: true, required_on: [:insert]}
+      },
+      name: %{
+        type: :string,
+        write: %{insertable: true, updatable: true, required_on: [:insert]}
+      },
+      state: %{type: :string, write: %{insertable: true, updatable: true}}
     },
     associations: %{}
   },
@@ -154,19 +165,6 @@ domain = %{
         conflict_targets: [[:tenant_id, :external_id]]
       },
       delete: %{enabled: true, expected_cardinality: {:exactly, 1}}
-    },
-    fields: %{
-      id: %{insertable: false, updatable: false},
-      tenant_id: %{insertable: true, updatable: false, immutable: true},
-      account_id: %{insertable: true, updatable: false, immutable: true},
-      external_id: %{
-        insertable: true,
-        updatable: false,
-        immutable: true,
-        required_on: [:insert]
-      },
-      name: %{insertable: true, updatable: true, required_on: [:insert]},
-      state: %{insertable: true, updatable: true}
     },
     scope: %{tenant: %{required: true, field: :tenant_id}},
     constraints: %{

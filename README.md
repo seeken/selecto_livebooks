@@ -110,6 +110,10 @@ The Updato workbooks are validated against the portable 0.4 command and graph
 contracts. The standalone bootstrap pins coordinated Selecto 0.4.11,
 PostgreSQL adapter 0.4.9, Updato 0.4.0, and Components 0.4.12 repository
 revisions; sibling checkouts remain the default for ecosystem development.
+The default-branch Updato cells now use write policy colocated with source
+columns and associations. Selecto normalizes that form into canonical
+`writes.fields` and `writes.relationships`; the standalone refs must advance
+before those new cells can run against pinned dependencies.
 
 ## Database Model
 

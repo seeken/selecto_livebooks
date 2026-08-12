@@ -53,6 +53,8 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     assert notebook =~ "SelectoLivebooksNotebookBootstrap.install_updato!()"
     assert notebook =~ "System.unique_integer([:positive, :monotonic])"
     assert notebook =~ "Keyword.put(:pool_size, 1)"
+    assert notebook =~ "write: %{server_managed: true}"
+    assert notebook =~ "Selecto normalizes it into canonical"
     assert notebook =~ "GenServer.stop(connection)"
     refute notebook =~ "SelectoLivebooksNotebookBootstrap.install!([updato_dep])"
     refute notebook =~ "Postgrex.stop(connection)"
@@ -188,6 +190,17 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
 
     assert {:error, %{type: :invalid_operation}} =
              SelectoUpdato.PortableCommand.compile(invalid_operation)
+  end
+
+  test "Updato nested workbook authors relationship policy beside its association" do
+    notebook =
+      File.read!(Path.join(@livebook_dir, "selecto_updato_nested_writes_workbook.livemd"))
+
+    assert notebook =~ "associations: %{\n      items: %{"
+    assert notebook =~ "write: %{\n          writable: true"
+    assert notebook =~ "owner_key: :id"
+    assert notebook =~ "related_key: :order_id"
+    refute notebook =~ "put_in(order_domain, [:writes, :relationships, :items, :child_key]"
   end
 
   test "bootstrap prefers sibling Selecto ecosystem checkouts when present" do

@@ -73,10 +73,13 @@ tenant_id = 91_001
 
 ## 3) Complete parent and child contracts
 
-The relationship contains a complete child domain. Each level has its own
-field policy, required insert fields, tenant scope, and cardinality contract.
-The caller may submit `items`, but may not submit `order_id`: the graph binds
-that ownership key from the generated parent `id`.
+Field policy is colocated with each source column, and relationship policy is
+colocated with the source association it governs. Selecto normalizes those
+authoring conveniences into canonical `writes.fields` and
+`writes.relationships` before Updato compiles the graph. Each level still has
+its own required insert fields, tenant scope, and cardinality contract. The
+caller may submit `items`, but may not submit `order_id`: the graph binds that
+ownership key from the generated parent `id`.
 
 ```elixir
 item_domain = %{
@@ -86,11 +89,17 @@ item_domain = %{
     primary_key: :id,
     fields: [:id, :tenant_id, :order_id, :sku, :quantity],
     columns: %{
-      id: %{type: :integer},
-      tenant_id: %{type: :integer},
+      id: %{type: :integer, write: %{server_managed: true}},
+      tenant_id: %{type: :integer, write: %{insertable: true, immutable: true}},
       order_id: %{type: :integer},
-      sku: %{type: :string},
-      quantity: %{type: :integer}
+      sku: %{
+        type: :string,
+        write: %{insertable: true, updatable: true, required_on: [:insert]}
+      },
+      quantity: %{
+        type: :integer,
+        write: %{insertable: true, updatable: true, required_on: [:insert]}
+      }
     },
     associations: %{}
   },
@@ -100,11 +109,6 @@ item_domain = %{
     operations: %{
       insert: %{enabled: true, expected_cardinality: {:exactly, 1}},
       update: %{enabled: true, require_filter: true, expected_cardinality: {:exactly, 1}}
-    },
-    fields: %{
-      tenant_id: %{insertable: true, immutable: true},
-      sku: %{insertable: true, updatable: true, required_on: [:insert]},
-      quantity: %{insertable: true, updatable: true, required_on: [:insert]}
     },
     scope: %{tenant: %{required: true, field: :tenant_id}},
     relationships: %{}
@@ -118,11 +122,33 @@ order_domain = %{
     primary_key: :id,
     fields: [:id, :tenant_id, :reference],
     columns: %{
-      id: %{type: :integer},
-      tenant_id: %{type: :integer},
-      reference: %{type: :string}
+      id: %{type: :integer, write: %{server_managed: true}},
+      tenant_id: %{type: :integer, write: %{insertable: true, immutable: true}},
+      reference: %{
+        type: :string,
+        write: %{insertable: true, updatable: true, required_on: [:insert]}
+      }
     },
-    associations: %{}
+    associations: %{
+      items: %{
+        queryable: :items,
+        field: :items,
+        cardinality: :many,
+        owner_key: :id,
+        related_key: :order_id,
+        write: %{
+          writable: true,
+          ownership: :owned,
+          allowed_ops: [:insert, :update],
+          domain: item_domain,
+          identity_fields: [:id],
+          strategy: :sync,
+          delete_missing: true,
+          min_items: 1,
+          max_items: 10
+        }
+      }
+    }
   },
   schemas: %{},
   joins: %{},
@@ -131,27 +157,7 @@ order_domain = %{
       insert: %{enabled: true, expected_cardinality: {:exactly, 1}},
       update: %{enabled: true, require_filter: true, expected_cardinality: {:exactly, 1}}
     },
-    fields: %{
-      tenant_id: %{insertable: true, immutable: true},
-      reference: %{insertable: true, updatable: true, required_on: [:insert]}
-    },
-    scope: %{tenant: %{required: true, field: :tenant_id}},
-    relationships: %{
-      items: %{
-        writable: true,
-        cardinality: :many,
-        ownership: :owned,
-        allowed_ops: [:insert, :update],
-        domain: item_domain,
-        parent_key: :id,
-        child_key: :order_id,
-        identity_fields: [:id],
-        strategy: :sync,
-        delete_missing: true,
-        min_items: 1,
-        max_items: 10
-      }
-    }
+    scope: %{tenant: %{required: true, field: :tenant_id}}
   }
 }
 
@@ -316,7 +322,7 @@ an invalid contract, not a database error.
 
 ```elixir
 invalid_domain =
-  put_in(order_domain, [:writes, :relationships, :items, :child_key], :missing_order_id)
+  put_in(order_domain, [:source, :associations, :items, :write, :child_key], :missing_order_id)
 
 invalid_operation =
   invalid_domain
