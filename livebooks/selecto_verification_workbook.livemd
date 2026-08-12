@@ -20,6 +20,8 @@ reports = %{
   domain_contract: Selecto.Verification.ContractSafety.verify(),
   write_scope: SelectoUpdato.Verification.WriteSafety.verify(),
   action_capability: SelectoUpdato.Verification.ActionSafety.verify(),
+  portable_command: SelectoUpdato.Verification.PortableCommandSafety.verify(),
+  nested_graph: SelectoUpdato.Verification.NestedGraphSafety.verify(),
   action_visibility: SelectoComponents.Verification.ActionVisibility.verify()
 }
 
@@ -31,6 +33,14 @@ Enum.each(reports, fn {name, report} ->
       "(#{report.proof_level})"
   )
 end)
+
+updato_checks =
+  reports
+  |> Map.take([:write_scope, :action_capability, :portable_command, :nested_graph])
+  |> Map.values()
+  |> Enum.sum_by(& &1.check_count)
+
+640 = updato_checks
 
 Map.new(reports, fn {name, report} ->
   {name,
@@ -62,5 +72,8 @@ proof_json
 ```
 
 The PostgreSQL adapter conformance preview and real transactional rollback
-probe live in `selecto_updato_feature_tour.livemd`, where the adapter is already
-installed and a direct Postgrex session is intentional.
+probe live in `selecto_updato_feature_tour.livemd`. Atomic generated-key and
+owned-set synchronization probes live in
+`selecto_updato_nested_writes_workbook.livemd`. Those notebooks intentionally
+install the adapter and open direct Postgrex sessions; this bounded-model
+workbook does neither.

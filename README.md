@@ -14,6 +14,7 @@ Core tours:
 - `selecto_guide_examples.livemd`
 - `selecto_selection_shapes_subselects_retargets.livemd`
 - `selecto_updato_feature_tour.livemd`
+- `selecto_updato_nested_writes_workbook.livemd`
 - `selecto_strict_mode_workbook.livemd`
 - `selecto_verification_workbook.livemd`
 - `selecto_components_analytics_workbook.livemd`
@@ -75,8 +76,10 @@ Focused Selecto workbooks:
 - The strict-mode workbook covers validated sealed domains, governed joins and
   domain SQL, eager raw-SQL rejection, and seal checks at compilation.
 - The verification workbook runs bounded-exhaustive read, contract, write,
-  action-authorization, and Components visibility models. The Updato tour owns
-  the PostgreSQL write-adapter conformance and transactional rollback probes.
+  portable-command, nested-graph, action-authorization, and Components
+  visibility models. Current Updato contributes four models and 640 checks.
+  The Updato tours own the PostgreSQL write-adapter conformance, generated-key,
+  owned-set synchronization, and transactional rollback probes.
 - The Components analytics workbook demonstrates column-local defaults and the
   shared Aggregate-to-Graph analytical query shape introduced in Components
   0.4.12, Graph URL-state preservation, and finite filter vocabularies.
@@ -86,9 +89,13 @@ Focused Selecto workbooks:
 - Output-format workbook includes explicit `execute_stream/2` contract guidance
   (`supports?(:stream)` + `stream/4` + compatible connection input) for
   adapter-backed streaming paths.
-- Updato feature tour includes tenant scope helper coverage
-  (`with_tenant/2`, `apply_tenant_scope/2`, `require_tenant_filter/2|3`, and
-  fail-fast scope validation).
+- The flat Updato feature tour covers `required_on: [:insert]`, tenant and
+  foreign-key context, domain-owned upsert policy, and transactional
+  cardinality rollback.
+- The nested-write workbook covers complete child domains, atomic portable
+  graphs, generated ownership keys, per-level tenant scope, strict relationship
+  validation, and delete-missing owned-set synchronization. The PostgreSQL
+  adapter selects native `MERGE` on supported servers or an ordered fallback.
 - Group-by workbook includes PostgreSQL ROLLUP ordering compatibility notes,
   including PG18+ behavior where rollup compatibility wrapping can be disabled.
 - Guide examples include read-side tenant scope helpers and UDF-backed scalar /
@@ -99,8 +106,10 @@ Focused Selecto workbooks:
   the current strict, verification, set-operation, analytical-default, and
   portable-write boundaries.
 
-The Updato feature tour is validated against the portable 0.3 write contract;
-the bootstrap still prefers sibling checkouts for ecosystem development.
+The Updato workbooks are validated against the portable 0.4 command and graph
+contracts. The standalone bootstrap pins coordinated Selecto 0.4.11,
+PostgreSQL adapter 0.4.9, Updato 0.4.0, and Components 0.4.12 repository
+revisions; sibling checkouts remain the default for ecosystem development.
 
 ## Database Model
 

@@ -2,10 +2,11 @@
 
 ## Overview
 
-This notebook is a runnable tour of SelectoUpdato 0.3's deliberately small
-write surface. Updato validates domain-governed intent and compiles a portable
-command; the configured database adapter owns SQL, driver interaction,
-transactions, and affected-row cardinality checks.
+This notebook is a runnable tour of SelectoUpdato 0.4's flat write surface.
+Updato validates domain-governed intent and compiles a portable command; the
+configured database adapter owns SQL, driver interaction, transactions, and
+affected-row cardinality checks. The companion nested-write workbook continues
+from commands into atomic `Selecto.Write.Graph` execution.
 
 It uses Postgrex directly. There is no `Ecto.Repo`, schema, changeset, or Ecto
 configuration in this write path.
@@ -18,20 +19,34 @@ SelectoLivebooksNotebookBootstrap.install_updato!()
 
 ## Bounded proof reports
 
-The packaged verification models check every state in their declared finite
-write-scope and action-authorization spaces. These are bounded proofs, not a
-claim about arbitrary adapters or host callbacks.
+The packaged verification models check every state in four declared finite
+spaces. These are bounded proofs, not a claim about arbitrary adapters or host
+callbacks.
 
 ```elixir
 write_safety_report = SelectoUpdato.Verification.WriteSafety.verify()
 action_safety_report = SelectoUpdato.Verification.ActionSafety.verify()
+portable_command_report = SelectoUpdato.Verification.PortableCommandSafety.verify()
+nested_graph_report = SelectoUpdato.Verification.NestedGraphSafety.verify()
 
 true = write_safety_report.proved?
 true = action_safety_report.proved?
+true = portable_command_report.proved?
+true = nested_graph_report.proved?
+640 =
+  Enum.sum([
+    write_safety_report.check_count,
+    action_safety_report.check_count,
+    portable_command_report.check_count,
+    nested_graph_report.check_count
+  ])
 
 %{
   write_scope: Map.take(write_safety_report, [:proof_level, :state_count, :check_count]),
-  action_capability: Map.take(action_safety_report, [:proof_level, :state_count, :check_count])
+  action_capability: Map.take(action_safety_report, [:proof_level, :state_count, :check_count]),
+  portable_command:
+    Map.take(portable_command_report, [:proof_level, :state_count, :check_count]),
+  nested_graph: Map.take(nested_graph_report, [:proof_level, :state_count, :check_count])
 }
 ```
 
@@ -42,7 +57,9 @@ flowchart LR
   Domain["Domain writes policy"] --> Updato["SelectoUpdato"]
   Context["Trusted tenant and account context"] --> Updato
   Updato --> Command["Selecto.Write.Command"]
+  Updato --> Graph["Selecto.Write.Graph"]
   Command --> Adapter["SelectoDBPostgreSQL.Adapter"]
+  Graph --> Adapter
   Adapter --> Postgrex["Postgrex connection"]
 ```
 
@@ -142,8 +159,13 @@ domain = %{
       id: %{insertable: false, updatable: false},
       tenant_id: %{insertable: true, updatable: false, immutable: true},
       account_id: %{insertable: true, updatable: false, immutable: true},
-      external_id: %{insertable: true, updatable: false, immutable: true},
-      name: %{insertable: true, updatable: true},
+      external_id: %{
+        insertable: true,
+        updatable: false,
+        immutable: true,
+        required_on: [:insert]
+      },
+      name: %{insertable: true, updatable: true, required_on: [:insert]},
       state: %{insertable: true, updatable: true}
     },
     scope: %{tenant: %{required: true, field: :tenant_id}},
@@ -166,6 +188,25 @@ selecto = %Selecto{
 }
 
 context = %{tenant_id: tenant_id, account_id: account_id}
+```
+
+## Required fields fail before adapter dispatch
+
+`required_on: [:insert]` is domain policy, not a database error translated
+after the fact. The portable compiler returns a structured validation error
+before preview or execution can reach the configured adapter.
+
+```elixir
+missing_name_operation =
+  domain
+  |> SelectoUpdato.new()
+  |> SelectoUpdato.insert(%{external_id: "missing-name"})
+
+{:error,
+ %SelectoUpdato.Error{
+   type: :validation,
+   details: %{errors: [{["name"], "is required"}]}
+ }} = SelectoUpdato.preview(missing_name_operation, selecto, context: context)
 ```
 
 ## Adapter conformance without mutation
@@ -308,7 +349,7 @@ mutation instead of returning an error after a partial commit.
 
 Delete requires a predicate and inherits trusted tenant scope. There is no
 bulk-delete confirmation switch, soft-delete helper, cascade option, changeset,
-or nested-write escape hatch in the portable API.
+or SQL escape hatch in the portable API.
 
 ```elixir
 delete_operation =
@@ -325,8 +366,10 @@ deleted
 
 ## What this tour intentionally does not provide
 
-The previous feature tour taught repositories, schemas, changesets, bulk and
-nested writes, custom conflict strategies, callbacks, cascades, and SQL emitted
-by Updato. Those are intentionally absent. New write features must first be
-portable command data, then be implemented by each adapter that can safely
-support them.
+The previous implementation taught repositories, schemas, changesets, legacy
+multi-step nested orchestration, custom conflict strategies, callbacks,
+cascades, and SQL emitted by Updato. Those paths remain intentionally absent.
+Nested writes returned in 0.4 as domain-governed, adapter-neutral atomic graphs;
+the companion `selecto_updato_nested_writes_workbook.livemd` exercises that new
+contract. New write features must first be portable data, then be implemented
+by each adapter that can safely support them.

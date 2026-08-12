@@ -119,6 +119,75 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
 
     assert {:error, %{type: :tenant_mismatch}} =
              SelectoUpdato.preview(forged, selecto, context: context)
+
+    missing_name =
+      domain
+      |> SelectoUpdato.new()
+      |> SelectoUpdato.insert(%{external_id: "preview-2"})
+
+    assert {:error,
+            %SelectoUpdato.Error{
+              type: :validation,
+              details: %{errors: [{["name"], "is required"}]}
+            }} = SelectoUpdato.preview(missing_name, selecto, context: context)
+  end
+
+  test "Updato nested workbook compiles domain-governed atomic graphs" do
+    domain = updato_nested_order_domain()
+
+    operation =
+      domain
+      |> SelectoUpdato.new(tenant: %{tenant_id: 91_001})
+      |> SelectoUpdato.insert(%{
+        reference: "SO-100",
+        items: [%{sku: "A", quantity: 2}, %{sku: "B", quantity: 1}]
+      })
+
+    assert {:ok, %Selecto.Write.Graph{} = graph, %{tenant_id: 91_001}} =
+             SelectoUpdato.PortableCommand.compile(operation)
+
+    assert :ok = Selecto.Write.Graph.validate(graph)
+    assert Enum.map(graph.nodes, & &1.id) == ["root", "items"]
+
+    items = Enum.find(graph.nodes, &(&1.id == "items"))
+
+    assert Enum.all?(items.rows, fn row ->
+             match?(
+               [
+                 %Selecto.Write.Graph.Binding{
+                   field: :order_id,
+                   from_node: "root",
+                   from_field: :id
+                 }
+               ],
+               row.bindings
+             )
+           end)
+
+    ownership_override =
+      domain
+      |> SelectoUpdato.new(tenant: %{tenant_id: 91_001})
+      |> SelectoUpdato.insert(%{
+        reference: "SO-FORGED",
+        items: [%{order_id: 999, sku: "A", quantity: 2}]
+      })
+
+    assert {:error, %{type: :invalid_graph, details: %{field: :order_id}}} =
+             SelectoUpdato.PortableCommand.compile(ownership_override)
+
+    invalid_domain =
+      put_in(domain, [:writes, :relationships, :items, :child_key], :missing_order_id)
+
+    invalid_operation =
+      invalid_domain
+      |> SelectoUpdato.new(tenant: %{tenant_id: 91_001})
+      |> SelectoUpdato.insert(%{
+        reference: "SO-BAD",
+        items: [%{sku: "A", quantity: 2}]
+      })
+
+    assert {:error, %{type: :invalid_operation}} =
+             SelectoUpdato.PortableCommand.compile(invalid_operation)
   end
 
   test "bootstrap prefers sibling Selecto ecosystem checkouts when present" do
@@ -164,14 +233,14 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
         assert {:selecto,
                 [
                   git: "https://github.com/seeken/selecto.git",
-                  ref: "8acc72d1abfaba02f58bf533fe59cf7e5bc291ea",
+                  ref: "8bb10c83e7fa50610c4e161b0e0b2c6f45d1b53e",
                   override: true
                 ]} = apply(SelectoLivebooksNotebookBootstrap, :selecto_dep, [])
 
         assert {:selecto_db_postgresql,
                 [
-                  git: "https://github.com/selecto-elixir/selecto_db_postgresql.git",
-                  ref: "cf5b325f7d8808f06bc04ab05aa9daaa8f244e08",
+                  git: "https://github.com/seeken/selecto_db_postgresql.git",
+                  ref: "c20856b8a7816001cf9c03437e747a1447e3085c",
                   override: true
                 ]} =
                  apply(SelectoLivebooksNotebookBootstrap, :selecto_db_postgresql_dep, [])
@@ -179,7 +248,7 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
         assert {:selecto_updato,
                 [
                   git: "https://github.com/seeken/selecto_updato.git",
-                  ref: "95dc0bb8438dba2d001d3e3f30beaff05ff617ce",
+                  ref: "6842d8dba1990ce96301eacfa08e873f51c883e8",
                   override: true
                 ]} = apply(SelectoLivebooksNotebookBootstrap, :updato_dep, [])
 
@@ -440,11 +509,17 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
       Selecto.Verification.ContractSafety.verify(),
       SelectoUpdato.Verification.WriteSafety.verify(),
       SelectoUpdato.Verification.ActionSafety.verify(),
+      SelectoUpdato.Verification.PortableCommandSafety.verify(),
+      SelectoUpdato.Verification.NestedGraphSafety.verify(),
       SelectoComponents.Verification.ActionVisibility.verify()
     ]
 
     assert Enum.all?(reports, &(&1.proof_level == :bounded_exhaustive))
     assert Enum.all?(reports, & &1.proved?), inspect(reports, pretty: true)
+
+    assert reports
+           |> Enum.filter(&String.starts_with?(&1.model, "selecto_updato."))
+           |> Enum.sum_by(& &1.check_count) == 640
 
     selecto = %Selecto{adapter: SelectoDBPostgreSQL.Adapter, connection: :preview_only}
     assert {:ok, report} = Selecto.Write.AdapterConformance.check(selecto)
@@ -521,6 +596,9 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
 
     updato = File.read!(Path.join(@livebook_dir, "selecto_updato_feature_tour.livemd"))
 
+    nested =
+      File.read!(Path.join(@livebook_dir, "selecto_updato_nested_writes_workbook.livemd"))
+
     assert strict =~ "mode: :strict"
     assert strict =~ "domain_sql: :forbid"
     assert verification =~ "Selecto.Verification.QuerySafety.verify()"
@@ -528,9 +606,16 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     assert analytics =~ "SelectoComponents.Views.Analytic.Defaults"
     assert analytics =~ "copy_aggregate_to_graph"
     assert analytics =~ "static_filter_options"
-    assert updato =~ "SelectoUpdato 0.3"
+    assert verification =~ "SelectoUpdato.Verification.PortableCommandSafety.verify()"
+    assert verification =~ "SelectoUpdato.Verification.NestedGraphSafety.verify()"
+    assert updato =~ "SelectoUpdato 0.4"
+    assert updato =~ "required_on: [:insert]"
     assert updato =~ "Selecto.Write.AdapterConformance.check"
     assert updato =~ "cardinality_mismatch"
+    assert nested =~ "Selecto.Write.Graph.validate"
+    assert nested =~ "delete_missing: true"
+    assert nested =~ "node_strategies"
+    assert nested =~ "missing_order_id"
   end
 
   defp elixir_cells(path) do
@@ -582,8 +667,13 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
           id: %{insertable: false, updatable: false},
           tenant_id: %{insertable: true, updatable: false, immutable: true},
           account_id: %{insertable: true, updatable: false, immutable: true},
-          external_id: %{insertable: true, updatable: false, immutable: true},
-          name: %{insertable: true, updatable: true},
+          external_id: %{
+            insertable: true,
+            updatable: false,
+            immutable: true,
+            required_on: [:insert]
+          },
+          name: %{insertable: true, updatable: true, required_on: [:insert]},
           state: %{insertable: true, updatable: true}
         },
         scope: %{tenant: %{required: true, field: :tenant_id}},
@@ -596,6 +686,68 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
             }
           }
         }
+      }
+    }
+  end
+
+  defp updato_nested_order_domain do
+    item_domain =
+      updato_nested_domain(
+        "updato_nested_items",
+        [:id, :tenant_id, :order_id, :sku, :quantity],
+        %{
+          sku: %{insertable: true, updatable: true, required_on: [:insert]},
+          quantity: %{insertable: true, updatable: true, required_on: [:insert]}
+        }
+      )
+
+    updato_nested_domain(
+      "updato_nested_orders",
+      [:id, :tenant_id, :reference],
+      %{reference: %{insertable: true, updatable: true, required_on: [:insert]}}
+    )
+    |> put_in([:writes, :relationships], %{
+      items: %{
+        writable: true,
+        cardinality: :many,
+        ownership: :owned,
+        allowed_ops: [:insert, :update],
+        domain: item_domain,
+        parent_key: :id,
+        child_key: :order_id,
+        identity_fields: [:id],
+        strategy: :sync,
+        delete_missing: true,
+        min_items: 1,
+        max_items: 10
+      }
+    })
+  end
+
+  defp updato_nested_domain(relation, fields, write_fields) do
+    %{
+      name: relation,
+      source: %{
+        source_table: relation,
+        primary_key: :id,
+        fields: fields,
+        columns: Map.new(fields, &{&1, %{type: :string}}),
+        associations: %{}
+      },
+      schemas: %{},
+      joins: %{},
+      writes: %{
+        operations: %{
+          insert: %{enabled: true, expected_cardinality: {:exactly, 1}},
+          update: %{
+            enabled: true,
+            require_filter: true,
+            expected_cardinality: {:exactly, 1}
+          }
+        },
+        fields: Map.merge(%{tenant_id: %{insertable: true, immutable: true}}, write_fields),
+        scope: %{tenant: %{required: true, field: :tenant_id}},
+        relationships: %{}
       }
     }
   end

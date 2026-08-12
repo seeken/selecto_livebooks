@@ -1,9 +1,9 @@
 defmodule SelectoLivebooks.MixProject do
   use Mix.Project
 
-  @selecto_ref "8acc72d1abfaba02f58bf533fe59cf7e5bc291ea"
-  @selecto_db_postgresql_ref "cf5b325f7d8808f06bc04ab05aa9daaa8f244e08"
-  @selecto_updato_ref "95dc0bb8438dba2d001d3e3f30beaff05ff617ce"
+  @selecto_ref "8bb10c83e7fa50610c4e161b0e0b2c6f45d1b53e"
+  @selecto_db_postgresql_ref "c20856b8a7816001cf9c03437e747a1447e3085c"
+  @selecto_updato_ref "6842d8dba1990ce96301eacfa08e873f51c883e8"
   @selecto_components_ref "b072e50dcaa090a6aa6bd8022e3eb2f6be297d2b"
 
   def project do
@@ -52,7 +52,7 @@ defmodule SelectoLivebooks.MixProject do
      dependency_source(
        "SELECTO_LIVE_SELECTO_DB_POSTGRESQL_PATH",
        "../selecto_db_postgresql",
-       "https://github.com/selecto-elixir/selecto_db_postgresql.git",
+       "https://github.com/seeken/selecto_db_postgresql.git",
        @selecto_db_postgresql_ref
      ) ++ [override: true]}
   end
