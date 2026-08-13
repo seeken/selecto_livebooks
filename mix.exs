@@ -1,9 +1,9 @@
 defmodule SelectoLivebooks.MixProject do
   use Mix.Project
 
-  @selecto_ref "8bb10c83e7fa50610c4e161b0e0b2c6f45d1b53e"
-  @selecto_db_postgresql_ref "c20856b8a7816001cf9c03437e747a1447e3085c"
-  @selecto_updato_ref "6842d8dba1990ce96301eacfa08e873f51c883e8"
+  @selecto_ref "732f0d665f42403725d3054189808ba1d19d0007"
+  @selecto_db_postgresql_ref "11ffe2706926f8d2606bdcb46d2475acebf41447"
+  @selecto_updato_ref "5f4adcb87cfc0b3db249dfe08f05e4e0e216d341"
   @selecto_components_ref "b072e50dcaa090a6aa6bd8022e3eb2f6be297d2b"
 
   def project do
@@ -42,7 +42,7 @@ defmodule SelectoLivebooks.MixProject do
      dependency_source(
        "SELECTO_LIVE_SELECTO_PATH",
        "../selecto",
-       "https://github.com/seeken/selecto.git",
+       "git@github.com:seeken/selecto.git",
        @selecto_ref
      ) ++ [override: true]}
   end
@@ -52,7 +52,7 @@ defmodule SelectoLivebooks.MixProject do
      dependency_source(
        "SELECTO_LIVE_SELECTO_DB_POSTGRESQL_PATH",
        "../selecto_db_postgresql",
-       "https://github.com/seeken/selecto_db_postgresql.git",
+       "git@github.com:seeken/selecto_db_postgresql.git",
        @selecto_db_postgresql_ref
      ) ++ [override: true]}
   end
@@ -62,7 +62,7 @@ defmodule SelectoLivebooks.MixProject do
      dependency_source(
        "SELECTO_LIVE_SELECTO_UPDATO_PATH",
        "../selecto_updato",
-       "https://github.com/seeken/selecto_updato.git",
+       "git@github.com:seeken/selecto_updato.git",
        @selecto_updato_ref
      ) ++ [override: true, only: :test]}
   end
@@ -72,7 +72,7 @@ defmodule SelectoLivebooks.MixProject do
      dependency_source(
        "SELECTO_LIVE_SELECTO_COMPONENTS_PATH",
        "../selecto_components",
-       "https://github.com/seeken/selecto_components.git",
+       "git@github.com:seeken/selecto_components.git",
        @selecto_components_ref
      ) ++ [override: true, only: :test]}
   end

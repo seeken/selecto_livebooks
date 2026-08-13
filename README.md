@@ -52,6 +52,32 @@ Focused Selecto workbooks:
    ```
 3. Open any notebook under `livebooks/`.
 
+## Automated Workbook Checks
+
+The default test suite parses every Elixir cell and exercises focused contract
+regressions without requiring PostgreSQL:
+
+```bash
+mise exec -- mix test
+```
+
+The updated Updato and verification workbooks also have an executable-cell
+gate. Point it at a prepared `selecto_livebooks` database to run the notebooks
+in fresh Elixir VMs exactly as checked in:
+
+```bash
+SELECTO_LIVEBOOKS_DB_PORT=5432 \
+  mise exec -- mix test --include postgres test/notebook_execution_test.exs
+```
+
+For an individual workbook, use the same maintained runner directly:
+
+```bash
+SELECTO_LIVEBOOKS_DB_PORT=5432 \
+  mise exec -- elixir scripts/verify_notebook.exs \
+  livebooks/selecto_updato_feature_tour.livemd
+```
+
 ## Dependency Policy
 
 - Workbooks bootstrap through the local `selecto_livebooks` project using
@@ -75,11 +101,11 @@ Focused Selecto workbooks:
   `~SELECTO` examples.
 - The strict-mode workbook covers validated sealed domains, governed joins and
   domain SQL, eager raw-SQL rejection, and seal checks at compilation.
-- The verification workbook runs bounded-exhaustive read, contract, write,
-  portable-command, nested-graph, action-authorization, and Components
-  visibility models. Current Updato contributes four models and 640 checks.
-  The Updato tours own the PostgreSQL write-adapter conformance, generated-key,
-  owned-set synchronization, and transactional rollback probes.
+- The verification workbook runs every current bounded-exhaustive model from
+  Selecto, Updato, the PostgreSQL adapter, and Components: 130,640 checks across
+  19 finite models. The Updato tours complement those proofs with real
+  PostgreSQL write-adapter conformance, generated-key, owned-set synchronization,
+  and transactional rollback probes.
 - The Components analytics workbook demonstrates column-local defaults and the
   shared Aggregate-to-Graph analytical query shape introduced in Components
   0.4.12, Graph URL-state preservation, and finite filter vocabularies.
@@ -104,16 +130,16 @@ Focused Selecto workbooks:
   parameters, and outer ordering/limit composition.
 - Tests parse every Elixir Livebook cell and execute focused regressions for
   the current strict, verification, set-operation, analytical-default, and
-  portable-write boundaries.
+  portable-write boundaries. The opt-in PostgreSQL gate executes the complete
+  Updato feature, nested-write, and verification workbooks cell-for-cell.
 
 The Updato workbooks are validated against the portable 0.4 command and graph
-contracts. The standalone bootstrap pins coordinated Selecto 0.4.11,
-PostgreSQL adapter 0.4.9, Updato 0.4.0, and Components 0.4.12 repository
-revisions; sibling checkouts remain the default for ecosystem development.
-The default-branch Updato cells now use write policy colocated with source
-columns and associations. Selecto normalizes that form into canonical
-`writes.fields` and `writes.relationships`; the standalone refs must advance
-before those new cells can run against pinned dependencies.
+contracts. The standalone bootstrap pins coordinated Selecto 0.4.13,
+PostgreSQL adapter 0.4.11, Updato 0.4.2, and Components 0.4.12 repository
+revisions over SSH; sibling checkouts remain the default for ecosystem
+development. The Updato cells use write policy colocated with source columns
+and associations. Selecto normalizes that form into canonical `writes.fields`
+and `writes.relationships`.
 
 ## Database Model
 

@@ -33,7 +33,7 @@ true = write_safety_report.proved?
 true = action_safety_report.proved?
 true = portable_command_report.proved?
 true = nested_graph_report.proved?
-640 =
+688 =
   Enum.sum([
     write_safety_report.check_count,
     action_safety_report.check_count,
@@ -157,12 +157,21 @@ domain = %{
   schemas: %{},
   writes: %{
     operations: %{
-      insert: %{enabled: true, expected_cardinality: {:exactly, 1}},
-      update: %{enabled: true, expected_cardinality: {:exactly, 1}},
+      insert: %{
+        enabled: true,
+        expected_cardinality: {:exactly, 1},
+        returning: :all
+      },
+      update: %{
+        enabled: true,
+        expected_cardinality: {:exactly, 1},
+        returning: :all
+      },
       upsert: %{
         enabled: true,
         expected_cardinality: {:exactly, 1},
-        conflict_targets: [[:tenant_id, :external_id]]
+        conflict_targets: [[:tenant_id, :external_id]],
+        returning: :all
       },
       delete: %{enabled: true, expected_cardinality: {:exactly, 1}}
     },

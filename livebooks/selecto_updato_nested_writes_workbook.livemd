@@ -18,16 +18,16 @@ SelectoLivebooksNotebookBootstrap.install_updato!()
 
 ## 1) The new finite-model coverage
 
-The portable-command model crosses 48 states with eight invariants. The
+The portable-command model crosses 48 states with nine invariants. The
 nested-graph model crosses 24 states with six invariants. Together with the
-write-scope and action-capability models, current Updato executes 640 bounded
+write-scope and action-capability models, current Updato executes 688 bounded
 checks.
 
 ```elixir
 portable_report = SelectoUpdato.Verification.PortableCommandSafety.verify()
 nested_report = SelectoUpdato.Verification.NestedGraphSafety.verify()
 
-%{state_count: 48, invariant_count: 8, check_count: 384, proved?: true} =
+%{state_count: 48, invariant_count: 9, check_count: 432, proved?: true} =
   Map.take(portable_report, [:state_count, :invariant_count, :check_count, :proved?])
 
 %{state_count: 24, invariant_count: 6, check_count: 144, proved?: true} =
@@ -108,7 +108,11 @@ item_domain = %{
   writes: %{
     operations: %{
       insert: %{enabled: true, expected_cardinality: {:exactly, 1}},
-      update: %{enabled: true, require_filter: true, expected_cardinality: {:exactly, 1}}
+      update: %{
+        enabled: true,
+        require_filter: true,
+        expected_cardinality: {:exactly, 1}
+      }
     },
     scope: %{tenant: %{required: true, field: :tenant_id}},
     relationships: %{}
@@ -154,8 +158,17 @@ order_domain = %{
   joins: %{},
   writes: %{
     operations: %{
-      insert: %{enabled: true, expected_cardinality: {:exactly, 1}},
-      update: %{enabled: true, require_filter: true, expected_cardinality: {:exactly, 1}}
+      insert: %{
+        enabled: true,
+        expected_cardinality: {:exactly, 1},
+        returning: :all
+      },
+      update: %{
+        enabled: true,
+        require_filter: true,
+        expected_cardinality: {:exactly, 1},
+        returning: :all
+      }
     },
     scope: %{tenant: %{required: true, field: :tenant_id}}
   }

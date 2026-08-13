@@ -75,6 +75,7 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
       domain
       |> SelectoUpdato.new()
       |> SelectoUpdato.insert(%{external_id: "preview-1", name: "Preview", state: "open"})
+      |> SelectoUpdato.returning([:id, :name, :state])
 
     assert {:ok, %{statements: [%{text: insert_sql}]}} =
              SelectoUpdato.preview(insert, selecto, context: context)
@@ -144,6 +145,7 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
         reference: "SO-100",
         items: [%{sku: "A", quantity: 2}, %{sku: "B", quantity: 1}]
       })
+      |> SelectoUpdato.returning([:id, :reference])
 
     assert {:ok, %Selecto.Write.Graph{} = graph, %{tenant_id: 91_001}} =
              SelectoUpdato.PortableCommand.compile(operation)
@@ -245,29 +247,29 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
       fn ->
         assert {:selecto,
                 [
-                  git: "https://github.com/seeken/selecto.git",
-                  ref: "8bb10c83e7fa50610c4e161b0e0b2c6f45d1b53e",
+                  git: "git@github.com:seeken/selecto.git",
+                  ref: "732f0d665f42403725d3054189808ba1d19d0007",
                   override: true
                 ]} = apply(SelectoLivebooksNotebookBootstrap, :selecto_dep, [])
 
         assert {:selecto_db_postgresql,
                 [
-                  git: "https://github.com/seeken/selecto_db_postgresql.git",
-                  ref: "c20856b8a7816001cf9c03437e747a1447e3085c",
+                  git: "git@github.com:seeken/selecto_db_postgresql.git",
+                  ref: "11ffe2706926f8d2606bdcb46d2475acebf41447",
                   override: true
                 ]} =
                  apply(SelectoLivebooksNotebookBootstrap, :selecto_db_postgresql_dep, [])
 
         assert {:selecto_updato,
                 [
-                  git: "https://github.com/seeken/selecto_updato.git",
-                  ref: "6842d8dba1990ce96301eacfa08e873f51c883e8",
+                  git: "git@github.com:seeken/selecto_updato.git",
+                  ref: "5f4adcb87cfc0b3db249dfe08f05e4e0e216d341",
                   override: true
                 ]} = apply(SelectoLivebooksNotebookBootstrap, :updato_dep, [])
 
         assert {:selecto_components,
                 [
-                  git: "https://github.com/seeken/selecto_components.git",
+                  git: "git@github.com:seeken/selecto_components.git",
                   ref: "b072e50dcaa090a6aa6bd8022e3eb2f6be297d2b",
                   override: true
                 ]} = apply(SelectoLivebooksNotebookBootstrap, :components_dep, [])
@@ -519,11 +521,24 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
 
   test "non-connecting ecosystem verification reports prove their finite models" do
     reports = [
+      Selecto.Verification.QuerySafety.verify(),
       Selecto.Verification.ContractSafety.verify(),
+      Selecto.Verification.WriteRegistrySafety.verify(),
+      Selecto.Verification.WriteCapabilitySafety.verify(),
+      Selecto.Verification.GovernedQueryComposition.verify(),
+      Selecto.Verification.WriteAuthorityNonEscalation.verify(),
       SelectoUpdato.Verification.WriteSafety.verify(),
       SelectoUpdato.Verification.ActionSafety.verify(),
       SelectoUpdato.Verification.PortableCommandSafety.verify(),
       SelectoUpdato.Verification.NestedGraphSafety.verify(),
+      SelectoUpdato.Verification.TrustBoundarySafety.verify(),
+      SelectoUpdato.Verification.AuthorizationLifecycleSafety.verify(),
+      SelectoUpdato.Verification.TenantNonInterferenceSafety.verify(),
+      SelectoUpdato.Verification.MultiAtomicitySafety.verify(),
+      SelectoDBPostgreSQL.Verification.AdapterSafety.check(),
+      SelectoDBPostgreSQL.Verification.PoolProtocol.check(),
+      SelectoDBPostgreSQL.Verification.StreamProtocol.check(),
+      SelectoDBPostgreSQL.Verification.TransactionProtocol.check(),
       SelectoComponents.Verification.ActionVisibility.verify()
     ]
 
@@ -531,8 +546,16 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     assert Enum.all?(reports, & &1.proved?), inspect(reports, pretty: true)
 
     assert reports
+           |> Enum.filter(&String.starts_with?(&1.model, "selecto."))
+           |> Enum.sum_by(& &1.check_count) == 14_050
+
+    assert reports
            |> Enum.filter(&String.starts_with?(&1.model, "selecto_updato."))
-           |> Enum.sum_by(& &1.check_count) == 640
+           |> Enum.sum_by(& &1.check_count) == 115_492
+
+    assert reports
+           |> Enum.filter(&String.starts_with?(&1.model, "selecto_db_postgresql."))
+           |> Enum.sum_by(& &1.check_count) == 1_080
 
     selecto = %Selecto{adapter: SelectoDBPostgreSQL.Adapter, connection: :preview_only}
     assert {:ok, report} = Selecto.Write.AdapterConformance.check(selecto)
@@ -542,7 +565,12 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     Code.require_file(Path.join(@livebook_dir, "support/bootstrap.exs"))
 
     assert apply(SelectoLivebooksNotebookBootstrap, :verification_deps, [])
-           |> Enum.map(&elem(&1, 0)) == [:selecto, :selecto_updato, :selecto_components]
+           |> Enum.map(&elem(&1, 0)) == [
+             :selecto,
+             :selecto_db_postgresql,
+             :selecto_updato,
+             :selecto_components
+           ]
   end
 
   test "column defaults feed the shared Aggregate and Graph analytical shape" do
@@ -621,11 +649,19 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     assert analytics =~ "static_filter_options"
     assert verification =~ "SelectoUpdato.Verification.PortableCommandSafety.verify()"
     assert verification =~ "SelectoUpdato.Verification.NestedGraphSafety.verify()"
+    assert verification =~ "Selecto.Verification.WriteAuthorityNonEscalation.verify()"
+    assert verification =~ "Selecto.Verification.WriteCapabilitySafety.verify()"
+    assert verification =~ "SelectoUpdato.Verification.AuthorizationLifecycleSafety.verify()"
+    assert verification =~ "SelectoDBPostgreSQL.Verification.TransactionProtocol.check()"
     assert updato =~ "SelectoUpdato 0.4"
     assert updato =~ "required_on: [:insert]"
+    assert updato =~ "returning: :all"
+    assert updato =~ ".returning([:id, :name, :state])"
     assert updato =~ "Selecto.Write.AdapterConformance.check"
     assert updato =~ "cardinality_mismatch"
     assert nested =~ "Selecto.Write.Graph.validate"
+    assert nested =~ "returning: :all"
+    assert nested =~ ".returning([:id, :reference])"
     assert nested =~ "delete_missing: true"
     assert nested =~ "node_strategies"
     assert nested =~ "missing_order_id"
@@ -667,12 +703,21 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
       schemas: %{},
       writes: %{
         operations: %{
-          insert: %{enabled: true, expected_cardinality: {:exactly, 1}},
-          update: %{enabled: true, expected_cardinality: {:exactly, 1}},
+          insert: %{
+            enabled: true,
+            expected_cardinality: {:exactly, 1},
+            returning: :all
+          },
+          update: %{
+            enabled: true,
+            expected_cardinality: {:exactly, 1},
+            returning: :all
+          },
           upsert: %{
             enabled: true,
             expected_cardinality: {:exactly, 1},
-            conflict_targets: [[:tenant_id, :external_id]]
+            conflict_targets: [[:tenant_id, :external_id]],
+            returning: :all
           },
           delete: %{enabled: true, expected_cardinality: {:exactly, 1}}
         },
@@ -735,6 +780,8 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
         max_items: 10
       }
     })
+    |> put_in([:writes, :operations, :insert, :returning], :all)
+    |> put_in([:writes, :operations, :update, :returning], :all)
   end
 
   defp updato_nested_domain(relation, fields, write_fields) do
