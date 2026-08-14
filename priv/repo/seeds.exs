@@ -9,8 +9,6 @@ alias SelectoLivebooks.Catalog.{Category, Supplier, Product, Tag, Review}
 alias SelectoLivebooks.Sales.{Customer, Order, OrderItem}
 alias SelectoLivebooks.Hr.Employee
 
-import Ecto.Query
-
 IO.puts("Seeding database...")
 
 # Clear existing data
