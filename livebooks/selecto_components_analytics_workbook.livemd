@@ -33,7 +33,7 @@ analytics_domain = %{
   joins: %{}
 }
 
-analytics_selecto = Selecto.configure(analytics_domain, :mock_connection)
+analytics_selecto = Selecto.configure(analytics_domain, Selecto.Runtime.Context.new(SelectoDBPostgreSQL.Adapter, :compile_only))
 
 group_defaults = SelectoComponents.Views.Analytic.Defaults.group_by(analytics_selecto)
 aggregate_defaults = SelectoComponents.Views.Analytic.Defaults.aggregate(analytics_selecto)
@@ -97,7 +97,7 @@ explicit_domain =
     default_aggregate: [{"id", %{"format" => "count"}}]
   })
 
-explicit_selecto = Selecto.configure(explicit_domain, :mock_connection)
+explicit_selecto = Selecto.configure(explicit_domain, Selecto.Runtime.Context.new(SelectoDBPostgreSQL.Adapter, :compile_only))
 
 %{
   group_by: SelectoComponents.Views.Analytic.Defaults.group_by(explicit_selecto),

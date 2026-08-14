@@ -10,9 +10,25 @@ defmodule SelectoLivebooks.Domains.CustomerDomain do
       source: %{
         source_table: "customers",
         primary_key: :id,
-        fields: [:id, :name, :email, :phone, :tier, :company_name, :address,
-                 :city, :region, :postal_code, :country, :notes, :preferences,
-                 :active, :verified_at, :inserted_at, :updated_at],
+        fields: [
+          :id,
+          :name,
+          :email,
+          :phone,
+          :tier,
+          :company_name,
+          :address,
+          :city,
+          :region,
+          :postal_code,
+          :country,
+          :notes,
+          :preferences,
+          :active,
+          :verified_at,
+          :inserted_at,
+          :updated_at
+        ],
         columns: %{
           id: %{type: :integer},
           name: %{type: :string, label: "Customer Name"},

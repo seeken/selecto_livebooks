@@ -3,11 +3,11 @@ defmodule SelectoLivebooks.Catalog.Tag do
   import Ecto.Changeset
 
   schema "tags" do
-    field :name, :string
-    field :slug, :string
-    field :description, :string
+    field(:name, :string)
+    field(:slug, :string)
+    field(:description, :string)
 
-    many_to_many :products, SelectoLivebooks.Catalog.Product, join_through: "product_tags"
+    many_to_many(:products, SelectoLivebooks.Catalog.Product, join_through: "product_tags")
 
     timestamps()
   end

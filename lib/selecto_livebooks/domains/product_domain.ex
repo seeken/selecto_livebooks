@@ -10,9 +10,25 @@ defmodule SelectoLivebooks.Domains.ProductDomain do
       source: %{
         source_table: "products",
         primary_key: :id,
-        fields: [:id, :name, :sku, :description, :price, :cost, :stock_quantity,
-                 :reorder_level, :weight, :active, :featured, :tags, :metadata,
-                 :category_id, :supplier_id, :inserted_at, :updated_at],
+        fields: [
+          :id,
+          :name,
+          :sku,
+          :description,
+          :price,
+          :cost,
+          :stock_quantity,
+          :reorder_level,
+          :weight,
+          :active,
+          :featured,
+          :tags,
+          :metadata,
+          :category_id,
+          :supplier_id,
+          :inserted_at,
+          :updated_at
+        ],
         columns: %{
           id: %{type: :integer},
           name: %{type: :string, label: "Product Name"},
@@ -33,8 +49,18 @@ defmodule SelectoLivebooks.Domains.ProductDomain do
           updated_at: %{type: :utc_datetime, label: "Updated At"}
         },
         associations: %{
-          category: %{field: :category, queryable: :categories, owner_key: :category_id, related_key: :id},
-          supplier: %{field: :supplier, queryable: :suppliers, owner_key: :supplier_id, related_key: :id}
+          category: %{
+            field: :category,
+            queryable: :categories,
+            owner_key: :category_id,
+            related_key: :id
+          },
+          supplier: %{
+            field: :supplier,
+            queryable: :suppliers,
+            owner_key: :supplier_id,
+            related_key: :id
+          }
         }
       },
       schemas: %{

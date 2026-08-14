@@ -52,7 +52,7 @@ strict_domain = %{
   }
 }
 
-strict_query = Selecto.configure(strict_domain, :mock_connection, mode: :strict)
+strict_query = Selecto.configure(strict_domain, Selecto.Runtime.Context.new(SelectoDBPostgreSQL.Adapter, :compile_only), mode: :strict)
 Selecto.Policy.strict?(strict_query)
 ```
 
@@ -150,7 +150,7 @@ configuration.
 ```elixir
 forbid_domain_sql_rejection =
   try do
-    Selecto.configure(strict_domain, :mock_connection,
+    Selecto.configure(strict_domain, Selecto.Runtime.Context.new(SelectoDBPostgreSQL.Adapter, :compile_only),
       mode: :strict,
       domain_sql: :forbid
     )

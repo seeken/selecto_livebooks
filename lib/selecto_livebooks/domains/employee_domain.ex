@@ -10,8 +10,20 @@ defmodule SelectoLivebooks.Domains.EmployeeDomain do
       source: %{
         source_table: "employees",
         primary_key: :id,
-        fields: [:id, :first_name, :last_name, :email, :title, :department,
-                 :hire_date, :salary, :active, :manager_id, :inserted_at, :updated_at],
+        fields: [
+          :id,
+          :first_name,
+          :last_name,
+          :email,
+          :title,
+          :department,
+          :hire_date,
+          :salary,
+          :active,
+          :manager_id,
+          :inserted_at,
+          :updated_at
+        ],
         columns: %{
           id: %{type: :integer},
           first_name: %{type: :string, label: "First Name"},
@@ -27,15 +39,30 @@ defmodule SelectoLivebooks.Domains.EmployeeDomain do
           updated_at: %{type: :utc_datetime, label: "Updated At"}
         },
         associations: %{
-          manager: %{field: :manager, queryable: :employees, owner_key: :manager_id, related_key: :id}
+          manager: %{
+            field: :manager,
+            queryable: :employees,
+            owner_key: :manager_id,
+            related_key: :id
+          }
         }
       },
       schemas: %{
         employees: %{
           source_table: "employees",
           primary_key: :id,
-          fields: [:id, :first_name, :last_name, :email, :title, :department,
-                   :hire_date, :salary, :active, :manager_id],
+          fields: [
+            :id,
+            :first_name,
+            :last_name,
+            :email,
+            :title,
+            :department,
+            :hire_date,
+            :salary,
+            :active,
+            :manager_id
+          ],
           redact_fields: [],
           columns: %{
             id: %{type: :integer},

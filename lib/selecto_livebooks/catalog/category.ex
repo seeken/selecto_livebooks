@@ -3,12 +3,12 @@ defmodule SelectoLivebooks.Catalog.Category do
   import Ecto.Changeset
 
   schema "categories" do
-    field :name, :string
-    field :description, :string
-    field :slug, :string
-    field :active, :boolean, default: true
+    field(:name, :string)
+    field(:description, :string)
+    field(:slug, :string)
+    field(:active, :boolean, default: true)
 
-    has_many :products, SelectoLivebooks.Catalog.Product
+    has_many(:products, SelectoLivebooks.Catalog.Product)
 
     timestamps()
   end

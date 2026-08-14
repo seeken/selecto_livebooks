@@ -303,7 +303,7 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
 
     query =
       domain
-      |> Selecto.configure(:mock_connection)
+      |> Selecto.configure(compile_context())
       |> Selecto.with_tenant(%{
         tenant_id: 1,
         tenant_field: "customer_id",
@@ -351,7 +351,7 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
 
     query =
       domain
-      |> Selecto.configure(:mock_connection)
+      |> Selecto.configure(compile_context())
       |> Selecto.with_lateral(Selecto.udf_table("series", [1, 3]),
         as: "stock_bucket",
         join_type: :left
@@ -378,7 +378,7 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
   test "retarget workbook accepts target-root post filters" do
     query =
       SelectoLivebooks.Domains.OrderDomain.domain()
-      |> Selecto.configure(:mock_connection)
+      |> Selecto.configure(compile_context())
       |> Selecto.filter({"status", "delivered"})
       |> Selecto.retarget(:order_items, subquery_strategy: :exists)
       |> Selecto.post_retarget_filter({"quantity", 2})
@@ -395,7 +395,7 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
   test "selection workbook nested subselect generates child JSON aggregate" do
     query =
       SelectoLivebooks.Domains.OrderDomain.domain()
-      |> Selecto.configure(:mock_connection)
+      |> Selecto.configure(compile_context())
       |> Selecto.select(["order_number", "status", "total"])
       |> Selecto.subselect([
         %{
@@ -432,13 +432,13 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
 
     high_value_delivered_orders =
       SelectoLivebooks.Domains.OrderDomain.domain()
-      |> Selecto.configure(:mock_connection)
+      |> Selecto.configure(compile_context())
       |> Selecto.select(select([customer_id, order_number, total]))
       |> Selecto.filter(where(status == "delivered" and total > 500))
 
     query =
       SelectoLivebooks.Domains.CustomerDomain.domain()
-      |> Selecto.configure(:mock_connection)
+      |> Selecto.configure(compile_context())
       |> Selecto.join_subquery(:high_value_delivered, high_value_delivered_orders,
         type: :inner,
         on: [%{left: "id", right: "customer_id"}]
@@ -464,7 +464,7 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
   end
 
   test "strict-mode workbook boundary compiles governed SQL and rejects caller SQL" do
-    strict_query = Selecto.configure(strict_mode_domain(), :mock_connection, mode: :strict)
+    strict_query = Selecto.configure(strict_mode_domain(), compile_context(), mode: :strict)
 
     query =
       strict_query
@@ -495,13 +495,13 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
 
     left =
       domain
-      |> Selecto.configure(:mock_connection)
+      |> Selecto.configure(compile_context())
       |> Selecto.select(["title", "rental_rate"])
       |> Selecto.filter({"rating", "PG"})
 
     right =
       domain
-      |> Selecto.configure(:mock_connection)
+      |> Selecto.configure(compile_context())
       |> Selecto.select(["title", "rental_rate"])
       |> Selecto.filter({"rating", "G"})
 
@@ -574,7 +574,7 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
   end
 
   test "column defaults feed the shared Aggregate and Graph analytical shape" do
-    selecto = Selecto.configure(analytics_domain(), :mock_connection)
+    selecto = Selecto.configure(analytics_domain(), compile_context())
 
     assert SelectoComponents.Views.Analytic.Defaults.group_by(selecto) == [
              {"booked_at", %{"format" => "month"}},
@@ -662,6 +662,7 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     assert nested =~ "Selecto.Write.Graph.validate"
     assert nested =~ "returning: :all"
     assert nested =~ ".returning([:id, :reference])"
+    assert nested =~ "allowed_ops: [:insert, :update, :delete]"
     assert nested =~ "delete_missing: true"
     assert nested =~ "node_strategies"
     assert nested =~ "missing_order_id"
@@ -769,7 +770,7 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
         writable: true,
         cardinality: :many,
         ownership: :owned,
-        allowed_ops: [:insert, :update],
+        allowed_ops: [:insert, :update, :delete],
         domain: item_domain,
         parent_key: :id,
         child_key: :order_id,
@@ -887,6 +888,10 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
       schemas: %{},
       joins: %{}
     }
+  end
+
+  defp compile_context do
+    Selecto.Runtime.Context.new(SelectoDBPostgreSQL.Adapter, :compile_only)
   end
 
   defp with_env(changes, fun) do

@@ -20,7 +20,7 @@ ordinary query composition:
 3. Overlay-based domain extension with `Selecto.Config.OverlayDSL`
 
 These examples are SQL-contract oriented, so they intentionally use
-`:mock_connection` when no live database execution is required.
+an explicit compile-only PostgreSQL runtime context when no live database execution is required.
 
 ```mermaid
 flowchart LR
@@ -106,7 +106,7 @@ active_customer_view_domain = %{
 customer_tier = "premium"
 
 view_query =
-  Selecto.configure(active_customer_view_domain, :mock_connection, validate: false)
+  Selecto.configure(active_customer_view_domain, Selecto.Runtime.Context.new(SelectoDBPostgreSQL.Adapter, :compile_only), validate: false)
   |> Selecto.select(select([customer_id, name, tier]))
   |> Selecto.filter(~SELECTO"tier == ^customer_tier")
   |> Selecto.order_by(order_by([asc(name)]))
@@ -225,7 +225,7 @@ overlay_customer_domain =
   |> Overlay.merge(DomainExtensionsLab.CustomerOrdersOverlay.overlay())
 
 overlay_query =
-  Selecto.configure(overlay_customer_domain, :mock_connection, validate: false)
+  Selecto.configure(overlay_customer_domain, Selecto.Runtime.Context.new(SelectoDBPostgreSQL.Adapter, :compile_only), validate: false)
   |> Selecto.select(select([name, tier, orders.order_number, orders.status, orders.total]))
   |> Selecto.order_by(order_by([asc(name), desc(orders.total)]))
   |> Selecto.limit(10)
@@ -255,7 +255,7 @@ generated_view_domain =
   })
 
 generated_view_query =
-  Selecto.configure(generated_view_domain, :mock_connection, validate: false)
+  Selecto.configure(generated_view_domain, Selecto.Runtime.Context.new(SelectoDBPostgreSQL.Adapter, :compile_only), validate: false)
   |> Selecto.select(select([name, tier, order_count, gross_total]))
   |> Selecto.order_by(order_by([desc(gross_total)]))
   |> Selecto.limit(10)
@@ -285,7 +285,7 @@ overlay_with_reporting_metadata =
   })
 
 overlay_filter_query =
-  Selecto.configure(overlay_with_reporting_metadata, :mock_connection, validate: false)
+  Selecto.configure(overlay_with_reporting_metadata, Selecto.Runtime.Context.new(SelectoDBPostgreSQL.Adapter, :compile_only), validate: false)
   |> Selecto.select(select([name, tier, orders.order_number, orders.total]))
   |> Selecto.filter(where(tier == "gold"))
   |> Selecto.order_by(order_by([desc(orders.total)]))
@@ -307,7 +307,7 @@ downstream_view_domain =
   |> put_in([:default_order_by], [{"gross_total", :desc}])
 
 downstream_view_query =
-  Selecto.configure(downstream_view_domain, :mock_connection, validate: false)
+  Selecto.configure(downstream_view_domain, Selecto.Runtime.Context.new(SelectoDBPostgreSQL.Adapter, :compile_only), validate: false)
   |> Selecto.select(select([name, tier, order_count, gross_total]))
   |> Selecto.filter(where(order_count >= 2))
   |> Selecto.order_by(order_by([desc(gross_total)]))
@@ -327,7 +327,7 @@ Code.require_file(Path.expand("support/domain_extension_fixture.exs", __DIR__))
 fixture_domain = SelectoLivebooks.DomainExtensionFixture.customer_order_summary_domain()
 
 fixture_query =
-  Selecto.configure(fixture_domain, :mock_connection, validate: false)
+  Selecto.configure(fixture_domain, Selecto.Runtime.Context.new(SelectoDBPostgreSQL.Adapter, :compile_only), validate: false)
   |> Selecto.select(select([name, tier, order_count, gross_total]))
   |> Selecto.order_by(order_by([desc(gross_total)]))
   |> Selecto.limit(5)

@@ -1,5 +1,7 @@
 import Config
 
+config :selecto, default_adapter: SelectoDBPostgreSQL.Adapter
+
 config :selecto_livebooks,
   ecto_repos: [SelectoLivebooks.Repo]
 

@@ -143,7 +143,7 @@ order_domain = %{
         write: %{
           writable: true,
           ownership: :owned,
-          allowed_ops: [:insert, :update],
+          allowed_ops: [:insert, :update, :delete],
           domain: item_domain,
           identity_fields: [:id],
           strategy: :sync,

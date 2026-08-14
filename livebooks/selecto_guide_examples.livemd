@@ -223,7 +223,7 @@ selecto = Selecto.configure(config.product_domain, config.repo)
 
 result = selecto
 |> Selecto.select(select([name, sku, price]))
-|> Selecto.filter(~SELECTO"ilike(name, ^pattern)")
+|> Selecto.filter(~SELECTO"case_insensitive_like(name, ^pattern)")
 |> SelectoLivebooks.LivebookHelpers.execute_with_checks()
 
 case result do
@@ -788,12 +788,12 @@ defmodule ProductSearch do
   defp apply_search(selecto, nil), do: selecto
   defp apply_search(selecto, ""), do: selecto
   defp apply_search(selecto, query) do
-    selecto |> Selecto.filter({"name", {:ilike, "%#{query}%"}})
+    selecto |> Selecto.filter({"name", {:case_insensitive_like, "%#{query}%"}})
   end
 
   defp apply_category_filter(selecto, nil), do: selecto
   defp apply_category_filter(selecto, category) do
-    selecto |> Selecto.filter({"category.name", {:ilike, "%#{category}%"}})
+    selecto |> Selecto.filter({"category.name", {:case_insensitive_like, "%#{category}%"}})
   end
 
   defp apply_price_filter(selecto, nil, nil), do: selecto

@@ -25,6 +25,7 @@ defmodule SelectoLivebooksNotebookBootstrap do
         {:kino, "~> 0.12"}
       ] ++ List.wrap(extra_deps),
       config: [
+        selecto: [default_adapter: SelectoDBPostgreSQL.Adapter],
         selecto_livebooks: [
           {SelectoLivebooks.Repo, repo_config},
           ecto_repos: [SelectoLivebooks.Repo]
@@ -47,7 +48,7 @@ defmodule SelectoLivebooksNotebookBootstrap do
   end
 
   def core_deps do
-    [selecto_dep(), {:kino, "~> 0.12"}]
+    [selecto_dep(), selecto_db_postgresql_dep(), {:kino, "~> 0.12"}]
   end
 
   def install_core! do
@@ -58,7 +59,9 @@ defmodule SelectoLivebooksNotebookBootstrap do
   end
 
   def install_updato! do
-    Mix.install(updato_deps())
+    Mix.install(updato_deps(),
+      config: [selecto: [default_adapter: SelectoDBPostgreSQL.Adapter]]
+    )
 
     IO.puts("Using Selecto dependency: #{inspect(selecto_dep())}")
     IO.puts("Using Selecto DB PostgreSQL dependency: #{inspect(selecto_db_postgresql_dep())}")
@@ -68,7 +71,7 @@ defmodule SelectoLivebooksNotebookBootstrap do
   end
 
   def components_deps do
-    [selecto_dep(), components_dep(), {:kino, "~> 0.12"}]
+    [selecto_dep(), selecto_db_postgresql_dep(), components_dep(), {:kino, "~> 0.12"}]
   end
 
   def install_components! do
@@ -84,7 +87,9 @@ defmodule SelectoLivebooksNotebookBootstrap do
   end
 
   def install_verification! do
-    Mix.install(verification_deps())
+    Mix.install(verification_deps(),
+      config: [selecto: [default_adapter: SelectoDBPostgreSQL.Adapter]]
+    )
 
     IO.puts("Using Selecto dependency: #{inspect(selecto_dep())}")
     IO.puts("Using SelectoUpdato dependency: #{inspect(updato_dep())}")
@@ -187,7 +192,8 @@ defmodule SelectoLivebooksNotebookBootstrap do
 
   defp assert_retarget_filter_runtime! do
     selecto =
-      apply(Selecto, :configure, [retarget_smoke_domain(), :mock_connection, [validate: false]])
+      runtime = Selecto.Runtime.Context.new(SelectoDBPostgreSQL.Adapter, :compile_only)
+      apply(Selecto, :configure, [retarget_smoke_domain(), runtime, [validate: false]])
 
     selecto = apply(Selecto, :retarget, [selecto, :order_items])
     apply(Selecto, :post_retarget_filter, [selecto, {"quantity", 2}])

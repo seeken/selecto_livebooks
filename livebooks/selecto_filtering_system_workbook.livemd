@@ -144,7 +144,7 @@ country_pattern = "%U%"
 string_filter_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.select(select([order_number, customer.name, shipping_country]))
-  |> Selecto.filter(~SELECTO"ilike(customer.name, ^name_pattern) or like(shipping_country, ^country_pattern)")
+  |> Selecto.filter(~SELECTO"case_insensitive_like(customer.name, ^name_pattern) or like(shipping_country, ^country_pattern)")
   |> Selecto.order_by(order_by([desc(inserted_at)]))
   |> Selecto.limit(10)
 

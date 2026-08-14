@@ -3,27 +3,38 @@ defmodule SelectoLivebooks.Catalog.Supplier do
   import Ecto.Changeset
 
   schema "suppliers" do
-    field :company_name, :string
-    field :contact_name, :string
-    field :contact_title, :string
-    field :email, :string
-    field :phone, :string
-    field :address, :string
-    field :city, :string
-    field :region, :string
-    field :postal_code, :string
-    field :country, :string
-    field :active, :boolean, default: true
+    field(:company_name, :string)
+    field(:contact_name, :string)
+    field(:contact_title, :string)
+    field(:email, :string)
+    field(:phone, :string)
+    field(:address, :string)
+    field(:city, :string)
+    field(:region, :string)
+    field(:postal_code, :string)
+    field(:country, :string)
+    field(:active, :boolean, default: true)
 
-    has_many :products, SelectoLivebooks.Catalog.Product
+    has_many(:products, SelectoLivebooks.Catalog.Product)
 
     timestamps()
   end
 
   def changeset(supplier, attrs) do
     supplier
-    |> cast(attrs, [:company_name, :contact_name, :contact_title, :email, :phone,
-                     :address, :city, :region, :postal_code, :country, :active])
+    |> cast(attrs, [
+      :company_name,
+      :contact_name,
+      :contact_title,
+      :email,
+      :phone,
+      :address,
+      :city,
+      :region,
+      :postal_code,
+      :country,
+      :active
+    ])
     |> validate_required([:company_name])
   end
 end
