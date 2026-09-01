@@ -6,6 +6,14 @@ defmodule SelectoLivebooks.NotebookExecutionTest do
 
   @repo_root Path.expand("..", __DIR__)
   @runner Path.join(@repo_root, "scripts/verify_notebook.exs")
+  @repo SelectoLivebooks.Repo
+  @database_env [
+    database: "SELECTO_LIVEBOOKS_DB",
+    username: "SELECTO_LIVEBOOKS_DB_USER",
+    password: "SELECTO_LIVEBOOKS_DB_PASS",
+    hostname: "SELECTO_LIVEBOOKS_DB_HOST",
+    port: "SELECTO_LIVEBOOKS_DB_PORT"
+  ]
   @workbooks [
     "selecto_updato_feature_tour.livemd",
     "selecto_updato_nested_writes_workbook.livemd",
@@ -22,12 +30,24 @@ defmodule SelectoLivebooks.NotebookExecutionTest do
       {output, status} =
         System.cmd(elixir, [@runner, path],
           cd: @repo_root,
-          env: [{"SELECTO_ECOSYSTEM_USE_LOCAL", ecosystem_mode}],
+          env: notebook_env(ecosystem_mode),
           stderr_to_stdout: true
         )
 
       assert status == 0, "#{workbook} failed:\n#{output}"
       assert output =~ "PASS livebooks/#{workbook}"
     end
+  end
+
+  defp notebook_env(ecosystem_mode) do
+    repo_config = Application.fetch_env!(:selecto_livebooks, @repo)
+
+    [{"SELECTO_ECOSYSTEM_USE_LOCAL", ecosystem_mode} | database_env(repo_config)]
+  end
+
+  defp database_env(repo_config) do
+    Enum.map(@database_env, fn {config_key, env_name} ->
+      {env_name, repo_config |> Keyword.fetch!(config_key) |> to_string()}
+    end)
   end
 end
