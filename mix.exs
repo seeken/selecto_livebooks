@@ -1,7 +1,7 @@
 defmodule SelectoLivebooks.MixProject do
   use Mix.Project
 
-  @selecto_ref "5267fc86b86f9cef8a135cdeb9311e2faf10d55f"
+  @selecto_ref "e54cab3bbf5855e5e4e67efb336dcffd4da2b6d9"
   @selecto_db_postgresql_ref "1f8200d50a64e988a54ce662debc5b70f2d225bd"
   @selecto_updato_ref "20cb09da9110d884262df8fa14cf8de9c5429846"
   @selecto_components_ref "aabca0a3d5cbc35e6b4ea658b61a4dd03c0aef81"
