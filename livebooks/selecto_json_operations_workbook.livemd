@@ -55,7 +55,10 @@ mix setup
 
 ## Setup 2) Connect to Repo and Build Product Domain
 
-This cell defines a local Repo and a product domain that includes `metadata` (`jsonb`) and `tags` (`array`).
+This cell defines a local Repo and a product domain that includes `metadata`
+and `tags`. PostgreSQL stores metadata as `jsonb`; the Selecto domain uses the
+semantic type `:json` so structured dot paths and selection shapes can resolve
+its nested fields. Storage type and domain type need not have the same name.
 
 ```elixir
 defmodule JsonLab.Repo do
@@ -100,7 +103,13 @@ defmodule JsonLab.ProductDomain do
           active: %{type: :boolean},
           featured: %{type: :boolean},
           tags: %{type: {:array, :string}},
-          metadata: %{type: :jsonb},
+          metadata: %{
+            type: :json,
+            schema: %{
+              "price_band" => %{type: :string},
+              "warehouse" => %{type: :object, schema: %{"zone" => %{type: :string}}}
+            }
+          },
           category_id: %{type: :integer},
           supplier_id: %{type: :integer},
           inserted_at: %{type: :utc_datetime}
@@ -359,14 +368,14 @@ premium_by_json_query =
   |> Selecto.select(select([name, sku, price]))
   |> Selecto.json_select([{:json_extract_text, "metadata", "$.price_band", as: "price_band"}])
   |> Selecto.json_filter({:json_contains, "metadata", %{"price_band" => "premium"}})
-  |> Selecto.order_by(order_by([desc(price)]))
+  |> Selecto.order_by(order_by([desc(price), asc(id)]))
   |> Selecto.limit(20)
 
 premium_by_relational_query =
   Selecto.configure(config.product_domain, config.repo)
   |> Selecto.select(select([name, sku, price]))
   |> Selecto.filter(where(price >= 100))
-  |> Selecto.order_by(order_by([desc(price)]))
+  |> Selecto.order_by(order_by([desc(price), asc(id)]))
   |> Selecto.limit(20)
 
 {:ok, {json_rows, _, _}} = JsonLab.Helpers.run("Premium by JSON price_band", premium_by_json_query, 5)
@@ -374,7 +383,9 @@ premium_by_relational_query =
 
 IO.puts("JSON rows: #{length(json_rows)}")
 IO.puts("Relational rows: #{length(rel_rows)}")
-IO.puts("Counts match? #{length(json_rows) == length(rel_rows)}")
+# JSON adds one extra projected column; compare the common fields and order.
+true = Enum.map(json_rows, &Enum.take(&1, 3)) == rel_rows
+IO.puts("The ordered product rows match, not just their count.")
 ```
 
 ## 7) Shaped Output with `json_select/2` + `select_shape/2`
@@ -400,7 +411,7 @@ json_shaped_query =
       {:field, "metadata.warehouse.zone", "warehouse_zone"}
     }
   ])
-  |> Selecto.order_by(order_by([desc(price)]))
+  |> Selecto.order_by(order_by([desc(price), asc(id)]))
   |> Selecto.limit(10)
 
 JsonLab.Helpers.run_shape("Shaped JSON projection", json_shaped_query, 10)
@@ -415,12 +426,14 @@ price bands as dimensions.
 json_category_agg_query =
   Selecto.configure(config.product_domain, config.repo)
   |> Selecto.select([
-    {:field, {:raw_sql, "metadata ->> 'price_band'"}, "price_band"},
-    {:field, {:raw_sql, "COUNT(*)"}, "product_count"},
-    {:field, {:raw_sql, "json_agg(selecto_root.name)"}, "product_names_json"},
-    {:field, {:raw_sql, "json_object_agg(selecto_root.sku, selecto_root.price)"}, "sku_price_json"}
+    {:field, "metadata.price_band", "price_band"},
+    {:field, {:count, "*"}, "product_count"}
   ])
-  |> Selecto.group_by([{:raw_sql, "metadata ->> 'price_band'"}])
+  |> Selecto.json_select([
+    {:json_agg, "name", as: "product_names_json"},
+    {:json_object_agg, "sku", "price", as: "sku_price_json"}
+  ])
+  |> Selecto.group_by(["metadata.price_band"])
   |> Selecto.order_by({{:count, "*"}, :desc})
   |> Selecto.limit(10)
 
@@ -460,11 +473,12 @@ Kino table.
 relational_compare_query =
   Selecto.configure(config.product_domain, config.repo)
   |> Selecto.select(select([name, sku, price, active]))
-  |> Selecto.order_by(order_by([desc(price)]))
+  |> Selecto.order_by(order_by([desc(price), asc(id)]))
   |> Selecto.limit(10)
 
 {:ok, json_rows} = JsonLab.Helpers.run_shape("JSON side", json_shaped_query, 10)
 {:ok, {rel_rows, rel_columns, _aliases}} = Selecto.execute(relational_compare_query)
+true = length(json_rows) == length(rel_rows)
 
 comparison_rows =
   Enum.zip(json_rows, rel_rows)
@@ -538,20 +552,20 @@ cast_comparison.rows
 ## 14) API-Ready Maps from JSON Aggregates
 
 Convert aggregate JSON rows into plain maps that are ready to return from an API
-or encode as JSON.
+or encode as JSON. `{:field, selector, alias}` supplies Selecto result metadata;
+it does not necessarily rename PostgreSQL's returned column. The `:maps`
+transformer applies that metadata, unlike zipping raw database column names.
 
 ```elixir
-{:ok, {aggregate_rows, aggregate_columns, _aliases}} = Selecto.execute(json_category_agg_query)
+{:ok, aggregate_maps} = Selecto.execute(json_category_agg_query, format: :maps)
 
 api_ready_json_aggregates =
-  Enum.map(aggregate_rows, fn row ->
-    row_map = Enum.zip(aggregate_columns, row) |> Map.new()
-
+  Enum.map(aggregate_maps, fn row_map ->
     %{
-      price_band: row_map["?column?"],
-      product_count: row_map["count"],
-      product_names: row_map["json_agg"],
-      sku_prices: row_map["json_object_agg"]
+      price_band: Map.fetch!(row_map, "price_band"),
+      product_count: Map.fetch!(row_map, "product_count"),
+      product_names: Map.fetch!(row_map, "product_names_json"),
+      sku_prices: Map.fetch!(row_map, "sku_price_json")
     }
   end)
 

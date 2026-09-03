@@ -226,7 +226,9 @@ end
 
 ## 5) Advanced Formats (`:typed_maps`, `:stream`)
 
-Use type-coerced maps and lazy streaming for larger processing pipelines.
+Use type-coerced maps and lazy result transformation. The `{:stream, :maps}`
+format below wraps an already-fetched response: it does not by itself bound
+database-fetch memory or implement a server-side cursor.
 
 ```elixir
 import Selecto.ExprMacros
@@ -276,50 +278,67 @@ For adapter-backed paths, streaming requires an explicit contract:
 * adapter must implement `stream/4`
 * connection input must match what the adapter's `stream/4` accepts
 
+The pinned PostgreSQL adapter's cursor path expects a native Postgrex connection,
+not an Ecto Repo supervisor or connection options. Use an explicit runtime and
+consume the stream before closing that connection. Creating the lazy stream
+alone does not prove that database streaming worked.
+
+Inspect the pinned contract below: Postgrex supplies `{row, columns}` as the
+payload inside Selecto's `{payload, outer_columns, aliases}` wrapper. The outer
+columns are currently empty. This differs from the flat raw-execution tuple;
+do not assume the two APIs are interchangeable. This check records that current
+behavior, not a cross-adapter row-shape guarantee.
+
 ```elixir
 import Selecto.ExprMacros
 
+{:ok, stream_connection} =
+  SelectoLivebooks.NotebookSupport.repo_config()
+  |> Keyword.put(:pool_size, 1)
+  |> Postgrex.start_link()
+
+stream_runtime = Selecto.Runtime.Context.new(SelectoDBPostgreSQL.Adapter, stream_connection)
+
 stream_query =
-  Selecto.configure(config.product_domain, config.repo)
+  Selecto.configure(config.product_domain, stream_runtime)
   |> Selecto.select(select([id, name]))
   |> Selecto.order_by(order_by([asc(id)]))
   |> Selecto.limit(5)
 
 OutputLab.Helpers.explain("execute_stream/2 query", stream_query)
 
-case Selecto.execute_stream(stream_query, analyze_complexity: false) do
-  {:ok, row_stream} ->
-    row_stream
-    |> Enum.take(5)
-    |> IO.inspect(label: "execute_stream preview")
+try do
+  {:ok, {expected_rows, expected_columns, _aliases}} = Selecto.execute(stream_query)
+  {:ok, row_stream} =
+    Selecto.execute_stream(stream_query, analyze_complexity: false, max_rows: 2)
 
-  {:error, error} ->
-    IO.puts("execute_stream error: #{inspect(error)}")
+  streamed_rows = Enum.to_list(row_stream)
+  IO.inspect(streamed_rows, label: "pinned cursor stream payload")
+
+  # Generated projection IDs can change between builds; compare data and columns.
+  streamed_data = Enum.map(streamed_rows, fn {{row, columns}, [], _aliases} -> {row, columns} end)
+  true = streamed_data == Enum.map(expected_rows, &{&1, expected_columns})
+  IO.puts("Cursor rows and columns match ordinary execution.")
+after
+  GenServer.stop(stream_connection)
 end
 
-adapter_stream_probe =
-  Selecto.configure(
-    config.product_domain,
-    SelectoLivebooks.NotebookSupport.repo_config(),
-    adapter: SelectoDBPostgreSQL.Adapter
+# At the adapter callback boundary, options are not an open connection.
+# Selecto.configure/3 may establish a connection from options, so it is not
+# an invalid-connection probe. Test the callback's actual contract directly.
+{:error, {:invalid_connection, _options}} =
+  SelectoDBPostgreSQL.Adapter.stream(
+    SelectoLivebooks.NotebookSupport.repo_config(), "SELECT 1", [], []
   )
-  |> Selecto.select(select([id, name]))
-  |> Selecto.order_by(order_by([asc(id)]))
-  |> Selecto.limit(5)
-
-case Selecto.execute_stream(adapter_stream_probe, analyze_complexity: false) do
-  {:error, %Selecto.Error{details: details}} ->
-    IO.inspect(details, label: "adapter stream contract details")
-
-  other ->
-    IO.inspect(other, label: "unexpected stream probe result")
-end
 ```
 
 ## 7) Compare `:maps` and `:typed_maps` Overhead
 
 This micro-benchmark keeps the query shape identical and varies only the output
-transformer.
+transformer. Single runs on a tiny dataset mix database/cache latency with
+formatting cost; treat them as instrumentation examples, not performance claims.
+Whole-VM memory deltas later in this workbook also include unrelated processes
+and garbage collection, and can be negative. They are not peak-memory measurements.
 
 ```elixir
 benchmark_query =
@@ -362,11 +381,11 @@ export_query =
   |> Selecto.order_by(order_by([asc(sku)]))
   |> Selecto.limit(100)
 
-export_path = Path.join(System.tmp_dir!(), "selecto_products_export.csv")
+export_path = Path.join(System.tmp_dir!(), "selecto_products_#{Ecto.UUID.generate()}.csv")
 
 case Selecto.execute(export_query, format: {:csv, [headers: true]}) do
   {:ok, csv_string} ->
-    File.write!(export_path, csv_string)
+    File.write!(export_path, csv_string, [:exclusive])
     IO.puts("Wrote #{byte_size(csv_string)} bytes to #{export_path}")
 
   {:error, error} ->
@@ -409,8 +428,8 @@ end
 
 ## 11) Memory Profile for Wide Result Sets
 
-Use lightweight runtime memory snapshots around wide result execution to compare
-the footprint of eager rows with stream processing.
+Inspect a whole-VM memory delta around eager execution. This is not a peak-memory
+measurement or evidence that formatted streams reduce database-fetch memory.
 
 ```elixir
 wide_query =

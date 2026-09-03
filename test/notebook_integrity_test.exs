@@ -15,6 +15,20 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     end)
   end
 
+  test "every workbook is discoverable in the README" do
+    readme = File.read!(Path.join(@repo_root, "README.md"))
+
+    for path <- Path.wildcard(Path.join(@livebook_dir, "*.livemd")) do
+      assert readme =~ "(livebooks/#{Path.basename(path)})"
+    end
+  end
+
+  test "default test application does not start the sample Repo" do
+    assert Application.get_env(:selecto_livebooks, :start_repo) == false
+    assert Process.whereis(SelectoLivebooks.Repo) == nil
+    refute Keyword.has_key?(Mix.Project.config()[:aliases], :test)
+  end
+
   test "bootstrap resolves sibling SelectoUpdato checkout when present" do
     bootstrap_path = Path.join(@livebook_dir, "support/bootstrap.exs")
     Code.require_file(bootstrap_path)
@@ -245,34 +259,23 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
         "SELECTO_LIVE_SELECTO_COMPONENTS_PATH" => nil
       },
       fn ->
-        assert {:selecto,
-                [
-                  git: "git@github.com:seeken/selecto.git",
-                  ref: "732f0d665f42403725d3054189808ba1d19d0007",
-                  override: true
-                ]} = apply(SelectoLivebooksNotebookBootstrap, :selecto_dep, [])
+        {pins, _} = Code.eval_file(Path.join(@livebook_dir, "support/dependency_pins.exs"))
+        project_deps = apply(SelectoLivebooks.MixProject, :project, [])[:deps]
 
-        assert {:selecto_db_postgresql,
-                [
-                  git: "git@github.com:seeken/selecto_db_postgresql.git",
-                  ref: "11ffe2706926f8d2606bdcb46d2475acebf41447",
-                  override: true
-                ]} =
-                 apply(SelectoLivebooksNotebookBootstrap, :selecto_db_postgresql_dep, [])
-
-        assert {:selecto_updato,
-                [
-                  git: "git@github.com:seeken/selecto_updato.git",
-                  ref: "5f4adcb87cfc0b3db249dfe08f05e4e0e216d341",
-                  override: true
-                ]} = apply(SelectoLivebooksNotebookBootstrap, :updato_dep, [])
-
-        assert {:selecto_components,
-                [
-                  git: "git@github.com:seeken/selecto_components.git",
-                  ref: "b072e50dcaa090a6aa6bd8022e3eb2f6be297d2b",
-                  override: true
-                ]} = apply(SelectoLivebooksNotebookBootstrap, :components_dep, [])
+        for {app, function} <- [
+              selecto: :selecto_dep,
+              selecto_db_postgresql: :selecto_db_postgresql_dep,
+              selecto_updato: :updato_dep,
+              selecto_components: :components_dep
+            ] do
+          assert {^app, options} = apply(SelectoLivebooksNotebookBootstrap, function, [])
+          assert options[:override]
+          assert Keyword.take(options, [:git, :ref]) == Map.fetch!(pins, app)
+          assert options[:ref] =~ ~r/\A[0-9a-f]{40}\z/
+          assert options[:git] == "git@github.com:seeken/#{app}.git"
+          {^app, project_options} = List.keyfind(project_deps, app, 0)
+          assert Keyword.take(project_options, [:git, :ref]) == Map.fetch!(pins, app)
+        end
       end
     )
   end

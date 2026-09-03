@@ -1,10 +1,9 @@
 defmodule SelectoLivebooks.MixProject do
   use Mix.Project
 
-  @selecto_ref "e54cab3bbf5855e5e4e67efb336dcffd4da2b6d9"
-  @selecto_db_postgresql_ref "1f8200d50a64e988a54ce662debc5b70f2d225bd"
-  @selecto_updato_ref "20cb09da9110d884262df8fa14cf8de9c5429846"
-  @selecto_components_ref "aabca0a3d5cbc35e6b4ea658b61a4dd03c0aef81"
+  @pins_file Path.join(__DIR__, "livebooks/support/dependency_pins.exs")
+  @external_resource @pins_file
+  @pins @pins_file |> Code.eval_file() |> elem(0)
 
   def project do
     [
@@ -42,8 +41,8 @@ defmodule SelectoLivebooks.MixProject do
      dependency_source(
        "SELECTO_LIVE_SELECTO_PATH",
        "../selecto",
-       "git@github.com:seeken/selecto.git",
-       @selecto_ref
+       @pins.selecto[:git],
+       @pins.selecto[:ref]
      ) ++ [override: true]}
   end
 
@@ -52,8 +51,8 @@ defmodule SelectoLivebooks.MixProject do
      dependency_source(
        "SELECTO_LIVE_SELECTO_DB_POSTGRESQL_PATH",
        "../selecto_db_postgresql",
-       "git@github.com:selecto-elixir/selecto_db_postgresql.git",
-       @selecto_db_postgresql_ref
+       @pins.selecto_db_postgresql[:git],
+       @pins.selecto_db_postgresql[:ref]
      ) ++ [override: true]}
   end
 
@@ -62,8 +61,8 @@ defmodule SelectoLivebooks.MixProject do
      dependency_source(
        "SELECTO_LIVE_SELECTO_UPDATO_PATH",
        "../selecto_updato",
-       "git@github.com:seeken/selecto_updato.git",
-       @selecto_updato_ref
+       @pins.selecto_updato[:git],
+       @pins.selecto_updato[:ref]
      ) ++ [override: true, only: :test]}
   end
 
@@ -72,8 +71,8 @@ defmodule SelectoLivebooks.MixProject do
      dependency_source(
        "SELECTO_LIVE_SELECTO_COMPONENTS_PATH",
        "../selecto_components",
-       "git@github.com:seeken/selecto_components.git",
-       @selecto_components_ref
+       @pins.selecto_components[:git],
+       @pins.selecto_components[:ref]
      ) ++ [override: true, only: :test]}
   end
 
@@ -105,8 +104,7 @@ defmodule SelectoLivebooks.MixProject do
     [
       setup: ["deps.get", "ecto.setup"],
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
-      "ecto.reset": ["ecto.drop", "ecto.setup"],
-      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"]
+      "ecto.reset": ["ecto.drop", "ecto.setup"]
     ]
   end
 end

@@ -2,12 +2,14 @@
 
 ## Setup 1) Install Dependencies
 
-Run this cell first. It installs the local `selecto_livebooks` project and its
-current Selecto dependencies for this Livebook session.
+Run this cell first. It installs the core dependencies and loads the two
+plain-map domain fixtures. No database or Ecto Repo is started.
 
 ```elixir
 Code.require_file(Path.expand("support/bootstrap.exs", __DIR__))
-SelectoLivebooksNotebookBootstrap.install!()
+SelectoLivebooksNotebookBootstrap.install_core!()
+Code.require_file(Path.expand("../lib/selecto_livebooks/domains/customer_domain.ex", __DIR__))
+Code.require_file(Path.expand("../lib/selecto_livebooks/domains/order_domain.ex", __DIR__))
 ```
 
 ## Overview
@@ -68,8 +70,7 @@ defmodule DomainExtensionsLab.Helpers do
         {:ok, result}
 
       {:error, errors} ->
-        IO.inspect(errors, label: "Published view errors")
-        {:error, errors}
+        raise "Published view compilation failed: #{inspect(errors)}"
     end
   end
 end
@@ -120,11 +121,17 @@ DomainExtensionsLab.Helpers.explain("View-backed domain query", view_query)
 `published_views` lets a domain register stable SQL publication contracts for
 generated views and materialized views.
 
+The spec explicitly chooses the adapter. This cell only compiles DDL; it does
+not create or refresh database objects. Ordinary views cannot have indexes.
+Concurrent refresh of a populated materialized view requires an appropriate
+unique, non-partial index; the example supplies one on `order_id`.
+
 ```elixir
 published_order_domain =
   OrderDomain.domain()
   |> Map.put(:published_views, %{
     order_rollup: %{
+      adapter: SelectoDBPostgreSQL.Adapter,
       database_name: "reporting.order_rollup",
       kind: :view,
       query: fn selecto ->
@@ -136,12 +143,10 @@ published_order_domain =
         status: %{type: :string},
         inserted_at: %{type: :utc_datetime}
       },
-      indexes: [
-        %{columns: [:order_id], unique: true},
-        %{columns: [:status]}
-      ]
+      indexes: []
     },
     recent_order_snapshot: %{
+      adapter: SelectoDBPostgreSQL.Adapter,
       database_name: "reporting.recent_order_snapshot",
       kind: :materialized_view,
       query: fn selecto ->
@@ -154,6 +159,7 @@ published_order_domain =
         inserted_at: %{type: :utc_datetime}
       },
       indexes: [
+        %{columns: [:order_id], unique: true},
         %{columns: [:inserted_at], concurrently: true}
       ]
     }
@@ -172,7 +178,7 @@ DomainExtensionsLab.Helpers.show_published_view(
 )
 
 IO.puts("\nRefresh SQL:")
-IO.puts(ViewPublisher.refresh_sql("reporting.recent_order_snapshot", concurrently: true))
+IO.puts(ViewPublisher.refresh_sql(SelectoDBPostgreSQL.Adapter, "reporting.recent_order_snapshot", concurrently: true))
 ```
 
 ## 3) Extend a Base Domain with Overlay DSL

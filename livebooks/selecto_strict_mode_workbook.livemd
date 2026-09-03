@@ -1,7 +1,7 @@
 # Selecto Strict Mode Workbook
 
 This workbook exercises the sealed query boundary added in Selecto 0.4.10.
-It needs no database: every example compiles against a mock connection.
+It needs no database: every example uses an explicit compile-only runtime.
 
 ## Setup
 

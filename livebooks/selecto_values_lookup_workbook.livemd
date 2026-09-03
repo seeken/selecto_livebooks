@@ -565,10 +565,14 @@ ValuesLab.LookupAssertions.assert_complete!(ValuesLab.Helpers.status_lookup_meta
 IO.puts("Status lookup covers #{Enum.join(expected_statuses, ", ")}")
 ```
 
-## 11) Compare Planning Cost with `EXPLAIN ANALYZE`
+## 11) Inspect Plans and Execution with `EXPLAIN ANALYZE`
 
 Compare the inline VALUES lookup and persisted lookup with the same selected
 fields and ordering.
+
+`EXPLAIN ANALYZE` actually executes the query and adds measurement overhead.
+Use only the controlled SELECT examples here against the disposable sample
+database. These tiny-fixture plans are not production performance evidence.
 
 ```elixir
 plan_lookup = fn label, query ->

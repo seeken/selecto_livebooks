@@ -13,17 +13,15 @@ defmodule SelectoLivebooks.NotebookVerifier do
       raise ArgumentError, "no Elixir cells found in #{path}"
     end
 
-    [setup_cell | remaining_cells] = cells
-    {_setup_result, setup_binding} = Code.eval_string(setup_cell, [], file: path)
+    cells
+    |> Enum.with_index(1)
+    |> Enum.reduce({[], Code.env_for_eval(file: path)}, fn {cell, index}, {binding, env} ->
+      IO.puts("RUN #{Path.basename(path)} cell #{index}/#{length(cells)}")
+      ast = Code.string_to_quoted!(cell, file: path)
+      {_result, next_binding, next_env} = Code.eval_quoted_with_env(ast, binding, env)
+      {next_binding, next_env}
+    end)
 
-    executable_source =
-      remaining_cells
-      |> Enum.with_index(2)
-      |> Enum.map_join("\n\n", fn {cell, index} ->
-        "# Livebook cell #{index}\n#{cell}"
-      end)
-
-    Code.eval_string(executable_source, setup_binding, file: path)
     IO.puts("PASS #{Path.relative_to_cwd(path)} (#{length(cells)} Elixir cells)")
   end
 end

@@ -1,5 +1,7 @@
 import Config
 
+config :selecto_livebooks, start_repo: false
+
 config :selecto_livebooks, SelectoLivebooks.Repo,
   database:
     System.get_env("SELECTO_LIVEBOOKS_DB") ||

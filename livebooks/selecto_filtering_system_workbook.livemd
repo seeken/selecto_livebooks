@@ -407,7 +407,7 @@ challenge_query_builder = fn ->
         (shipping_country == "USA" or shipping_country == "Canada") and total >= 120
     )
   )
-  |> Selecto.order_by(order_by([desc(total)]))
+  |> Selecto.order_by(order_by([desc(total), asc(id)]))
   |> Selecto.limit(10)
 end
 
@@ -428,47 +428,53 @@ IO.puts("All checks pass? #{Enum.all?(fragment_checks, fn {_f, ok?} -> ok? end)}
 FilteringLab.Helpers.run("Challenge query", challenge_query, 10)
 ```
 
-## 12) Score Challenge Solutions by Row-Count Similarity
+## 12) Compare Challenge Results, Not Just Row Counts
 
-This helper compares a learner query to a reference query without requiring an
-exact SQL string match.
+Equal row counts can hide completely different answers. Compare column order
+and row multisets (including duplicate multiplicity) without requiring exact
+SQL text. This intentionally ignores row ordering; test ordering separately
+when it is part of the result contract. Matching this fixture does not prove
+equivalence for every possible dataset.
 
 ```elixir
 defmodule FilteringLab.ChallengeScoring do
   @moduledoc false
 
-  def row_count(query) do
-    {:ok, {rows, _columns, _aliases}} = Selecto.execute(query)
-    length(rows)
+  def score(reference_query, learner_query) do
+    {:ok, reference_result} = Selecto.execute(reference_query)
+    {:ok, learner_result} = Selecto.execute(learner_query)
+    compare(reference_result, learner_result)
   end
 
-  def score(reference_query, learner_query) do
-    reference_count = row_count(reference_query)
-    learner_count = row_count(learner_query)
-    distance = abs(reference_count - learner_count)
-    denominator = max(reference_count, 1)
-    similarity = max(0.0, 1.0 - distance / denominator)
-
+  def compare({reference_rows, reference_columns, _}, {learner_rows, learner_columns, _}) do
     %{
-      reference_rows: reference_count,
-      learner_rows: learner_count,
-      row_delta: learner_count - reference_count,
-      similarity_percent: Float.round(similarity * 100, 1)
+      reference_rows: length(reference_rows),
+      learner_rows: length(learner_rows),
+      same_columns?: reference_columns == learner_columns,
+      same_row_multiset?: Enum.frequencies(reference_rows) == Enum.frequencies(learner_rows)
     }
   end
 end
 
 reference_challenge_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.select(select([status, shipping_country, as(sum(total), "total")]))
-  |> Selecto.filter(where(status in ["processing", "shipped", "delivered"]))
-  |> Selecto.filter(where(total >= 50 and total <= 500))
-  |> Selecto.group_by(group_by([status, shipping_country]))
-  |> Selecto.order_by({{:sum, "total"}, :desc})
+  |> Selecto.select(select([order_number, status, shipping_country, total]))
+  |> Selecto.filter(where(status in ["delivered", "shipped"]))
+  |> Selecto.filter(where(shipping_country in ["USA", "Canada"] and total >= 120))
+  |> Selecto.order_by(order_by([desc(total), asc(id)]))
   |> Selecto.limit(10)
 
-FilteringLab.ChallengeScoring.score(reference_challenge_query, challenge_query)
-|> then(&Kino.DataTable.new([&1]))
+score = FilteringLab.ChallengeScoring.score(reference_challenge_query, challenge_query)
+true = score.same_columns? and score.same_row_multiset?
+
+# Equal counts and equal distinct sets must not mask the wrong row multiplicity.
+wrong_answer = FilteringLab.ChallengeScoring.compare(
+  {[[1], [1], [2]], ["id"], []}, {[[1], [2], [2]], ["id"], []}
+)
+false = wrong_answer.same_row_multiset?
+true = wrong_answer.reference_rows == wrong_answer.learner_rows
+
+Kino.DataTable.new([score])
 ```
 
 ## 13) Safely Parameterize User-Provided Filter Values

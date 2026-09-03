@@ -68,6 +68,8 @@ config
 This helper prints SQL and optionally executes the query.
 
 ```elixir
+import Selecto.ExprMacros
+
 defmodule JoinTypeLab.Helpers do
   @moduledoc false
 

@@ -17,7 +17,8 @@ defmodule SelectoLivebooks.NotebookExecutionTest do
   @workbooks [
     "selecto_updato_feature_tour.livemd",
     "selecto_updato_nested_writes_workbook.livemd",
-    "selecto_verification_workbook.livemd"
+    "selecto_pagination_workbook.livemd",
+    "selecto_tenant_reads_workbook.livemd"
   ]
 
   test "updated workbooks execute every Elixir cell" do
@@ -42,7 +43,12 @@ defmodule SelectoLivebooks.NotebookExecutionTest do
   defp notebook_env(ecosystem_mode) do
     repo_config = Application.fetch_env!(:selecto_livebooks, @repo)
 
-    [{"SELECTO_ECOSYSTEM_USE_LOCAL", ecosystem_mode} | database_env(repo_config)]
+    [
+      {"MIX_DEPS_PATH", nil},
+      {"MIX_BUILD_PATH", nil},
+      {"SELECTO_ECOSYSTEM_USE_LOCAL", ecosystem_mode}
+      | database_env(repo_config)
+    ]
   end
 
   defp database_env(repo_config) do

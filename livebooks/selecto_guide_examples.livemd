@@ -23,6 +23,10 @@ mix setup
 
 ## How to Use This Complete Tour
 
+For a shorter first run without a database, start with
+[Your First Selecto Query](selecto_first_query_workbook.livemd). This 42-section
+tour is the reference track, not a prerequisite for using the focused workbooks.
+
 * Run cells from top to bottom on first pass, because setup state (`config`, helper modules, and seeded metadata updates) is reused later.
 * Re-run individual section cells freely after setup; most query examples are independent and read-only.
 * For each query cell, compare three things: Selecto pipeline, printed SQL checks, and returned rows. That mapping is the fastest way to build intuition.
@@ -34,6 +38,10 @@ mix setup
 2. Sections 11-20: Advanced SQL features (set ops, CTEs, window functions, JSON, arrays, lateral joins, CASE, VALUES).
 3. Sections 21-31: Execution helpers, subqueries, join instances, output formats, and Ecto bootstrapping.
 4. Sections 32-40: Domain-level join strategies, introspection, typing helpers, and hierarchy marker previews.
+5. Sections 41-42: Tenant scope and UDF-backed queries. For asserted application
+   flows, see [tenant reads](selecto_tenant_reads_workbook.livemd),
+   [pagination](selecto_pagination_workbook.livemd), and
+   [query libraries](selecto_query_library_workbook.livemd).
 
 ### Visual Map: Complete Tour
 
@@ -342,6 +350,10 @@ end
 
 ### Pagination
 
+Use a unique tie-breaker so equal product names have a deterministic order.
+For insertion drift and a keyset alternative, see the
+[pagination workbook](selecto_pagination_workbook.livemd).
+
 ```elixir
 # Page 2, 10 items per page
 page = 2
@@ -351,7 +363,7 @@ selecto = Selecto.configure(config.product_domain, config.repo)
 
 result = selecto
 |> Selecto.select(["name", "sku", "price"])
-|> Selecto.order_by({"name", :asc})
+|> Selecto.order_by([{"name", :asc}, {"id", :asc}])
 |> Selecto.limit(per_page)
 |> Selecto.offset((page - 1) * per_page)
 |> SelectoLivebooks.LivebookHelpers.execute_with_checks()
@@ -3217,7 +3229,7 @@ Expected output checks (Tenant Scope Helpers):
 
 ## Section 42: UDF-Backed Expressions and Table Functions
 
-This section focuses on registering database functions in the domain and calling them from Selecto expressions. It uses PostgreSQL built-ins (`lower/1` and `generate_series/2`) so the examples do not require custom database extensions.
+This section focuses on registering database functions in the domain and calling them from Selecto expressions. It uses PostgreSQL built-ins (`lower/1` and `jsonb_each_text/1`) so the examples do not require custom database extensions.
 
 ### Scalar UDF in `select/2` and `order_by/2`
 
@@ -3234,14 +3246,13 @@ udf_domain =
       returns: :string,
       allowed_in: [:select, :order_by]
     },
-    "series" => %{
+    "metadata_pairs" => %{
       kind: :table,
-      sql_name: "generate_series",
+      sql_name: "jsonb_each_text",
       args: [
-        %{name: :start, type: :integer, source: :value},
-        %{name: :stop, type: :integer, source: :value}
+        %{name: :document, type: :json, source: :selector}
       ],
-      returns: %{columns: %{value: %{type: :integer}}},
+      returns: %{columns: %{key: %{type: :string}, value: %{type: :string}}},
       allowed_in: [:lateral, :query_member]
     }
   })
@@ -3274,14 +3285,18 @@ end
 
 Business question: How can a table-valued function contribute columns to a query?
 
+Use the built-in function's actual `key` and `value` output columns. Its typed
+JSONB input comes from the domain-owned metadata selector. Declaring UDF argument
+types alone does not add SQL casts or rename a database function's output.
+
 ```elixir
 table_udf_query =
   Selecto.configure(udf_domain, config.repo)
-  |> Selecto.with_lateral(Selecto.udf_table("series", [1, 3]),
-    as: "stock_bucket",
+  |> Selecto.with_lateral(Selecto.udf_table("metadata_pairs", ["metadata"]),
+    as: "metadata_pair",
     join_type: :left
   )
-  |> Selecto.select(["name", "sku", "stock_bucket.value"])
+  |> Selecto.select(["name", "sku", "metadata_pair.key", "metadata_pair.value"])
   |> Selecto.filter({"active", true})
   |> Selecto.limit(5)
 
@@ -3302,8 +3317,8 @@ end
 Expected output checks (UDF Examples):
 
 * Scalar UDF calls compile to `lower(selecto_root.name)` while preserving Selecto-managed selectors and aliases
-* Table UDF calls compile to `JOIN LATERAL generate_series($1, $2)` and expose `stock_bucket.value`
-* Value arguments to table UDFs are parameterized (`[1, 3]`) rather than interpolated into SQL text
+* Table UDF calls compile to `JOIN LATERAL jsonb_each_text(selecto_root.metadata)` and expose the database function's `key` and `value` columns
+* The function input is a domain-owned selector; the outer `active` filter remains a bound value
 
 ## Conclusion
 

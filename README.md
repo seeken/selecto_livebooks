@@ -1,151 +1,164 @@
 # Selecto Livebooks
 
-`selecto_livebooks` is the Livebook companion repo for Selecto and SelectoUpdato.
-It ships a runnable example app plus focused workbooks for major feature areas.
+A runnable learning companion for Selecto, SelectoUpdato, and SelectoComponents.
+Start with a short workflow, then use the SQL-operator workbooks as references.
+The [September 2026 relevance review](docs/workbook-review.md) records coverage,
+corrections, and what the checks do—and do not—prove.
 
-## Structure
+## Start here
 
-- `config/`, `lib/`, `priv/`, `test/` - runnable example app and dataset
-- `livebooks/` - interactive notebooks grouped by topic
+1. [Your first query](livebooks/selecto_first_query_workbook.livemd): a minimal
+   domain, explicit runtime, bound parameters, and automatic join selection.
+2. [Reusable queries](livebooks/selecto_query_library_workbook.livemd): compose
+   segments, projections, orderings, and views; validate saved request intent.
+3. [Stable pagination](livebooks/selecto_pagination_workbook.livemd): tie-breakers,
+   keyset boundaries, look-ahead rows, and offset drift after an insertion.
+4. [Tenant-scoped reads](livebooks/selecto_tenant_reads_workbook.livemd): trusted
+   context, missing scope, optional OR filters, and real cross-tenant isolation checks.
 
-## Workbook Index
+The first two need no database. The next two need only an existing PostgreSQL
+database; they create deterministic **temporary tables**, not permanent data.
 
-Core tours:
-- `selecto_guide_examples.livemd`
-- `selecto_selection_shapes_subselects_retargets.livemd`
-- `selecto_updato_feature_tour.livemd`
-- `selecto_updato_nested_writes_workbook.livemd`
-- `selecto_strict_mode_workbook.livemd`
-- `selecto_verification_workbook.livemd`
-- `selecto_components_analytics_workbook.livemd`
+## Workbook index
 
-Focused Selecto workbooks:
-- `selecto_domain_extensions_workbook.livemd`
-- `selecto_filtering_system_workbook.livemd`
-- `selecto_group_by_aggregates_workbook.livemd`
-- `selecto_ctes_workbook.livemd`
-- `selecto_other_joins_workbook.livemd`
-- `selecto_domain_join_types_workbook.livemd`
-- `selecto_set_operations_workbook.livemd`
-- `selecto_window_functions_workbook.livemd`
-- `selecto_json_operations_workbook.livemd`
-- `selecto_array_unnest_lateral_workbook.livemd`
-- `selecto_case_expressions_workbook.livemd`
-- `selecto_values_lookup_workbook.livemd`
-- `selecto_output_formats_execution_workbook.livemd`
+**No database** — every Elixir cell is executed by the default test suite:
 
-## Requirements
+| Workbook | Use it for |
+| --- | --- |
+| [First query](livebooks/selecto_first_query_workbook.livemd) | Compile/execute distinction, immutability, automatic joins, parameters |
+| [Query library](livebooks/selecto_query_library_workbook.livemd) | Reusable business definitions and typed external parameters |
+| [Strict mode](livebooks/selecto_strict_mode_workbook.livemd) | Sealed domains and caller-authored SQL rejection |
+| [Domain extensions](livebooks/selecto_domain_extensions_workbook.livemd) | View DDL compilation, explicit adapters, overlays and drift checks |
+| [Components analytics](livebooks/selecto_components_analytics_workbook.livemd) | Shared Aggregate/Graph state, defaults and URL preservation |
+| [Bounded verification](livebooks/selecto_verification_workbook.livemd) | Named finite safety models and their proof limits |
 
-- Elixir `~> 1.18`
-- PostgreSQL `13+`
-- Livebook `0.12+`
+**PostgreSQL, isolated fixtures** — fresh-session execution is opt-in:
 
-## Quick Start
+| Workbook | Use it for |
+| --- | --- |
+| [Pagination](livebooks/selecto_pagination_workbook.livemd) | Deterministic pages, cursor validation, concurrent insertion example |
+| [Tenant reads](livebooks/selecto_tenant_reads_workbook.livemd) | Asserted read-side scope and visibility enforcement |
+| [Updato feature tour](livebooks/selecto_updato_feature_tour.livemd) | Governed insert/update/upsert/delete, conformance and rollback |
+| [Nested writes](livebooks/selecto_updato_nested_writes_workbook.livemd) | Generated keys, owned-child synchronization and atomic graphs |
 
-1. Prepare the example app:
-   ```bash
-   mix setup
-   ```
-2. Start Livebook from the project root:
-   ```bash
-   livebook server
-   ```
-3. Open any notebook under `livebooks/`.
+**Seeded PostgreSQL reference track** — run `mix setup` in a disposable database:
 
-## Automated Workbook Checks
+| Workbook | Use it for |
+| --- | --- |
+| [Complete guide](livebooks/selecto_guide_examples.livemd) | The broad 42-section reference tour |
+| [Selections, subselects, retargets](livebooks/selecto_selection_shapes_subselects_retargets.livemd) | Flat rows vs nested collections; avoid accidental row multiplication |
+| [Filtering](livebooks/selecto_filtering_system_workbook.livemd) | Typed predicates, boolean composition, subqueries and result comparisons |
+| [Group-by and aggregates](livebooks/selecto_group_by_aggregates_workbook.livemd) | Reporting grain, totals, HAVING, ROLLUP/CUBE |
+| [CTEs](livebooks/selecto_ctes_workbook.livemd) | Reusable subqueries, recursive trees and composition |
+| [Other joins](livebooks/selecto_other_joins_workbook.livemd) | Parameterized, dynamic and subquery joins; advanced reference |
+| [Domain join types](livebooks/selecto_domain_join_types_workbook.livemd) | OLAP/hierarchy markers; metadata previews vs executable queries |
+| [Set operations](livebooks/selecto_set_operations_workbook.livemd) | UNION/INTERSECT/EXCEPT, duplicate semantics and bound parameters |
+| [Window functions](livebooks/selecto_window_functions_workbook.livemd) | Ranking, running totals, frames and partitioned analytics |
+| [JSON operations](livebooks/selecto_json_operations_workbook.livemd) | PostgreSQL JSON paths, extraction and reporting |
+| [Arrays, UNNEST, LATERAL](livebooks/selecto_array_unnest_lateral_workbook.livemd) | Collection expansion and preserving unmatched parents |
+| [CASE expressions](livebooks/selecto_case_expressions_workbook.livemd) | Business buckets, nullable values and conditional priority |
+| [VALUES lookups](livebooks/selecto_values_lookup_workbook.livemd) | Small inline lookup relations and plan inspection |
+| [Output formats and execution](livebooks/selecto_output_formats_execution_workbook.livemd) | Result shapes, exports, stream contracts and measurement caveats |
 
-The default test suite parses every Elixir cell and exercises focused contract
-regressions without requiring PostgreSQL:
+All 24 notebooks receive syntax/integrity checks. The seeded execution gate also
+runs all 14 reference notebooks and rejects known unexpected-error markers.
+Exploratory cells and intentionally printed negative cases are not exhaustive
+correctness proofs; the new workflows additionally assert concrete outcomes.
+
+## Run a notebook
+
+Use the workspace's Mise toolchain (or a compatible Elixir runtime; verified
+with Elixir 1.20) and Livebook. From this repository:
 
 ```bash
-mise exec -- mix test
+mise exec -- mix deps.get
+livebook server
 ```
 
-The updated Updato and verification workbooks also have an executable-cell
-gate. Point it at a prepared `selecto_livebooks` database to run the notebooks
-in fresh Elixir VMs exactly as checked in:
+Open a notebook under `livebooks/` and run top to bottom. The setup cell installs
+its dependencies in the Livebook runtime. Database-free notebooks do not need
+`mix setup`. First-time dependency installation may require network access.
+
+For database-backed notebooks, start Livebook with the database environment:
 
 ```bash
+SELECTO_LIVEBOOKS_DB=selecto_livebooks_dev \
+SELECTO_LIVEBOOKS_DB_HOST=localhost \
 SELECTO_LIVEBOOKS_DB_PORT=5432 \
-  mise exec -- mix test --include postgres test/notebook_execution_test.exs
+  livebook server
 ```
 
-For an individual workbook, use the same maintained runner directly:
+Also set `SELECTO_LIVEBOOKS_DB_USER` and `SELECTO_LIVEBOOKS_DB_PASS` as needed.
+Configure the same environment for `mix setup` when using the seeded track.
+
+**Use a disposable example database.** `mix setup` runs migrations and the seed
+script deletes/replaces data in the sample tables. Several advanced reference
+cells alter fixture data, define functions, or write exports. Do not point them
+at production. The pagination/tenant notebooks only use session-local temporary
+tables; closing their Postgrex connection drops those fixtures.
+
+## Verification
+
+Default: no database startup or database-creation side effect. Parses every
+notebook, runs focused API regressions, and executes all six database-free
+workbooks cell by cell in fresh Elixir VMs:
 
 ```bash
-SELECTO_LIVEBOOKS_DB_PORT=5432 \
-  mise exec -- elixir scripts/verify_notebook.exs \
-  livebooks/selecto_updato_feature_tour.livemd
+mise exec -- env SELECTO_ECOSYSTEM_USE_LOCAL=1 mix test
 ```
 
-## Dependency Policy
+Live gate: point it at an **existing disposable** PostgreSQL database. No sample
+migrations/seeds are required for these four workbooks:
 
-- Workbooks bootstrap through the local `selecto_livebooks` project using
-  `livebooks/support/bootstrap.exs`.
-- The project prefers sibling path deps for `selecto` and
-  related packages when the full Selecto workspace is present.
-- Outside the mono-workspace, the project uses pinned Git commits for the
-  coordinated Selecto, PostgreSQL adapter, Updato, and Components revisions.
-  This is intentional while the versions used here are newer than their Hex
-  releases; standalone installs do not claim that unpublished packages exist.
-- Set `SELECTO_ECOSYSTEM_USE_LOCAL=0` to exercise the pinned standalone path.
-  `SELECTO_LIVE_SELECTO_PATH`, `SELECTO_LIVE_SELECTO_DB_POSTGRESQL_PATH`,
-  `SELECTO_LIVE_SELECTO_UPDATO_PATH`, and
-  `SELECTO_LIVE_SELECTO_COMPONENTS_PATH` can target explicit checkouts.
-- Shared runtime setup for repo config, domain loading, and SQL health checks now
-  lives in `SelectoLivebooks.NotebookSupport`.
+```bash
+mise exec -- env SELECTO_ECOSYSTEM_USE_LOCAL=1 \
+  SELECTO_LIVEBOOKS_DB=selecto_livebooks_dev \
+  SELECTO_LIVEBOOKS_DB_PORT=5432 \
+  mix test --include postgres test/notebook_execution_test.exs
+```
 
-## Current Notebook Parity Notes
+Seeded reference gate: first initialize a **disposable** database with `mix setup`
+using the same environment. These 14 notebooks can modify fixture data and write
+exports, so this gate is separate from both default tests and isolated fixtures:
 
-- Core workbooks use shared setup helpers and current `Selecto.ExprMacros` /
-  `~SELECTO` examples.
-- The strict-mode workbook covers validated sealed domains, governed joins and
-  domain SQL, eager raw-SQL rejection, and seal checks at compilation.
-- The verification workbook runs every current bounded-exhaustive model from
-  Selecto, Updato, the PostgreSQL adapter, and Components: 130,640 checks across
-  19 finite models. The Updato tours complement those proofs with real
-  PostgreSQL write-adapter conformance, generated-key, owned-set synchronization,
-  and transactional rollback probes.
-- The Components analytics workbook demonstrates column-local defaults and the
-  shared Aggregate-to-Graph analytical query shape introduced in Components
-  0.4.12, Graph URL-state preservation, and finite filter vocabularies.
-- Added `selecto_domain_extensions_workbook.livemd` for view-backed domains,
-  published views, and overlay DSL examples that were previously missing from
-  the livebook set.
-- Output-format workbook includes explicit `execute_stream/2` contract guidance
-  (`supports?(:stream)` + `stream/4` + compatible connection input) for
-  adapter-backed streaming paths.
-- The flat Updato feature tour covers `required_on: [:insert]`, tenant and
-  foreign-key context, domain-owned upsert policy, and transactional
-  cardinality rollback.
-- The nested-write workbook covers complete child domains, atomic portable
-  graphs, generated ownership keys, per-level tenant scope, strict relationship
-  validation, and delete-missing owned-set synchronization. The PostgreSQL
-  adapter selects native `MERGE` on supported servers or an ordered fallback.
-- Group-by workbook includes PostgreSQL ROLLUP ordering compatibility notes,
-  including PG18+ behavior where rollup compatibility wrapping can be disabled.
-- Guide examples include read-side tenant scope helpers and UDF-backed scalar /
-  table-function query patterns.
-- Set-operation coverage includes filtered operands, globally renumbered bound
-  parameters, and outer ordering/limit composition.
-- Tests parse every Elixir Livebook cell and execute focused regressions for
-  the current strict, verification, set-operation, analytical-default, and
-  portable-write boundaries. The opt-in PostgreSQL gate executes the complete
-  Updato feature, nested-write, and verification workbooks cell-for-cell.
+```bash
+mise exec -- env SELECTO_ECOSYSTEM_USE_LOCAL=1 \
+  SELECTO_LIVEBOOKS_DB=selecto_livebooks_dev \
+  SELECTO_LIVEBOOKS_DB_PORT=5432 \
+  mix test --include seeded test/notebook_seeded_execution_test.exs
+```
 
-The Updato workbooks are validated against the portable 0.4 command and graph
-contracts. The standalone bootstrap pins coordinated Selecto 0.4.13,
-PostgreSQL adapter 0.4.11, Updato 0.4.2, and Components 0.4.12 repository
-revisions over SSH; sibling checkouts remain the default for ecosystem
-development. The Updato cells use write policy colocated with source columns
-and associations. Selecto normalizes that form into canonical `writes.fields`
-and `writes.relationships`.
+Run one workbook with the maintained runner:
 
-## Database Model
+```bash
+mise exec -- elixir scripts/verify_notebook.exs livebooks/selecto_first_query_workbook.livemd
+```
 
-Seeds create an e-commerce style model with:
+The runner preserves bindings, aliases, and imports between cells, identifies
+the failing cell, and exits nonzero for uncaught failures. Assertions in the
+new workflows check concrete results and negative cases, not just SQL text.
 
-- categories, suppliers, products, tags
-- customers, orders, order_items
-- employees (hierarchy)
-- reviews
+## Dependency policy
+
+- [One dependency snapshot](livebooks/support/dependency_pins.exs) supplies the
+  same immutable published Git revisions to the app and notebook bootstrap.
+- Sibling checkouts are preferred in this workspace. Use
+  `SELECTO_ECOSYSTEM_USE_LOCAL=0` to test standalone pinned dependencies;
+  Git mode uses SSH and requires GitHub access.
+- Existing `SELECTO_LIVE_SELECTO_PATH`,
+  `SELECTO_LIVE_SELECTO_DB_POSTGRESQL_PATH`, `SELECTO_LIVE_SELECTO_UPDATO_PATH`,
+  and `SELECTO_LIVE_SELECTO_COMPONENTS_PATH` overrides remain supported.
+- Core/strict/workflow examples use explicit `Selecto.Runtime.Context` values.
+  The database fixtures use Postgrex directly; Ecto belongs only to the shared
+  seeded sample app, not to the Selecto query-building requirement.
+- This is a checked-in runtime snapshot, not a claim that all these revisions
+  are available as Hex releases.
+
+## Structure and dataset
+
+`livebooks/` contains notebooks and shared bootstrap/fixtures. `config/`,
+`lib/`, and `priv/` contain the optional seeded app. `scripts/` and `test/`
+hold the executable gates.
+
+The seeded e-commerce model covers categories, suppliers, products, tags,
+customers, orders, order items, hierarchical employees, and reviews.

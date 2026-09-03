@@ -1,2 +1,2 @@
 ExUnit.start()
-ExUnit.configure(exclude: [:postgres])
+ExUnit.configure(exclude: [:postgres, :seeded])

@@ -8,10 +8,9 @@ defmodule SelectoLivebooksNotebookBootstrap do
   @updato_root Path.join(@workspace_root, "selecto_updato")
   @components_root Path.join(@workspace_root, "selecto_components")
 
-  @selecto_ref "732f0d665f42403725d3054189808ba1d19d0007"
-  @selecto_db_postgresql_ref "11ffe2706926f8d2606bdcb46d2475acebf41447"
-  @selecto_updato_ref "5f4adcb87cfc0b3db249dfe08f05e4e0e216d341"
-  @selecto_components_ref "b072e50dcaa090a6aa6bd8022e3eb2f6be297d2b"
+  @pins_file Path.join(__DIR__, "dependency_pins.exs")
+  @external_resource @pins_file
+  @pins @pins_file |> Code.eval_file() |> elem(0)
 
   def install!(extra_deps \\ []) do
     selecto_livebooks_dep = {:selecto_livebooks, path: @project_root, override: true}
@@ -113,8 +112,8 @@ defmodule SelectoLivebooksNotebookBootstrap do
       :selecto,
       "SELECTO_LIVE_SELECTO_PATH",
       @selecto_root,
-      "git@github.com:seeken/selecto.git",
-      @selecto_ref
+      @pins.selecto[:git],
+      @pins.selecto[:ref]
     )
   end
 
@@ -123,8 +122,8 @@ defmodule SelectoLivebooksNotebookBootstrap do
       :selecto_db_postgresql,
       "SELECTO_LIVE_SELECTO_DB_POSTGRESQL_PATH",
       @selecto_db_postgresql_root,
-      "git@github.com:seeken/selecto_db_postgresql.git",
-      @selecto_db_postgresql_ref
+      @pins.selecto_db_postgresql[:git],
+      @pins.selecto_db_postgresql[:ref]
     )
   end
 
@@ -133,8 +132,8 @@ defmodule SelectoLivebooksNotebookBootstrap do
       :selecto_updato,
       "SELECTO_LIVE_SELECTO_UPDATO_PATH",
       @updato_root,
-      "git@github.com:seeken/selecto_updato.git",
-      @selecto_updato_ref
+      @pins.selecto_updato[:git],
+      @pins.selecto_updato[:ref]
     )
   end
 
@@ -143,8 +142,8 @@ defmodule SelectoLivebooksNotebookBootstrap do
       :selecto_components,
       "SELECTO_LIVE_SELECTO_COMPONENTS_PATH",
       @components_root,
-      "git@github.com:seeken/selecto_components.git",
-      @selecto_components_ref
+      @pins.selecto_components[:git],
+      @pins.selecto_components[:ref]
     )
   end
 
@@ -191,9 +190,9 @@ defmodule SelectoLivebooksNotebookBootstrap do
   end
 
   defp assert_retarget_filter_runtime! do
-    selecto =
-      runtime = Selecto.Runtime.Context.new(SelectoDBPostgreSQL.Adapter, :compile_only)
-      apply(Selecto, :configure, [retarget_smoke_domain(), runtime, [validate: false]])
+    runtime = apply(Selecto.Runtime.Context, :new, [SelectoDBPostgreSQL.Adapter, :compile_only])
+
+    selecto = apply(Selecto, :configure, [retarget_smoke_domain(), runtime, [validate: false]])
 
     selecto = apply(Selecto, :retarget, [selecto, :order_items])
     apply(Selecto, :post_retarget_filter, [selecto, {"quantity", 2}])
