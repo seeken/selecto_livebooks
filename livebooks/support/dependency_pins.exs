@@ -6,11 +6,11 @@
   ],
   selecto_db_postgresql: [
     git: "git@github.com:seeken/selecto_db_postgresql.git",
-    ref: "8673453dd80dcf1f6e5e26dc159f8dd293af3bb6"
+    ref: "ae310beee3ff9891b7a8ff0e82e8efec3866060d"
   ],
   selecto_updato: [
     git: "git@github.com:seeken/selecto_updato.git",
-    ref: "ae77af34943c7dffb7db67f8ca20b9802dac7d92"
+    ref: "44e32cba0ec9437f5aa5d888bb87df771861aadd"
   ],
   selecto_components: [
     git: "git@github.com:seeken/selecto_components.git",
