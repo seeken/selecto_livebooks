@@ -653,16 +653,15 @@ end
 
 ### Retarget Example: Retarget Delivered Orders to Line Items
 
+The order filter becomes the retarget context. The retargeted query is rooted at
+`order_items`, so it selects that table's fields by bare name.
+
 ```elixir
 retarget_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.filter({"status", "delivered"})
-  |> Selecto.retarget(:order_items, subquery_strategy: :exists)
-  |> Selecto.select([
-    {:field, "order_items.product_id", "product_id"},
-    {:field, "order_items.quantity", "quantity"},
-    {:field, "order_items.line_total", "line_total"}
-  ])
+  |> Selecto.retarget(:order_items, strategy: :exists)
+  |> Selecto.select(["product_id", "quantity", "line_total"])
 
 {retarget_sql, retarget_params} = Selecto.to_sql(retarget_query)
 IO.puts("Generated SQL for Retarget query:\n")

@@ -32,7 +32,7 @@ defmodule SelectoLivebooksNotebookBootstrap do
       ]
     )
 
-    assert_retarget_filter_runtime!()
+    assert_retarget_runtime!()
 
     IO.puts("Using Selecto dependency: #{inspect(selecto_dep())}")
     IO.puts("Using Selecto DB PostgreSQL dependency: #{inspect(selecto_db_postgresql_dep())}")
@@ -189,22 +189,32 @@ defmodule SelectoLivebooksNotebookBootstrap do
     end)
   end
 
-  defp assert_retarget_filter_runtime! do
+  defp assert_retarget_runtime! do
     runtime = apply(Selecto.Runtime.Context, :new, [SelectoDBPostgreSQL.Adapter, :compile_only])
 
     selecto = apply(Selecto, :configure, [retarget_smoke_domain(), runtime, [validate: false]])
 
     selecto = apply(Selecto, :retarget, [selecto, :order_items])
-    apply(Selecto, :post_retarget_filter, [selecto, {"quantity", 2}])
+
+    # A retarget roots the query at its target, so later filters name target fields.
+    case apply(Selecto, :source_table, [selecto]) do
+      "order_items" ->
+        :ok
+
+      other ->
+        raise ArgumentError, "retarget(:order_items) left the query rooted at #{inspect(other)}"
+    end
+
+    apply(Selecto, :filter, [selecto, {"quantity", 2}])
 
     :ok
   rescue
     error in ArgumentError ->
       reraise """
-              Selecto retarget filter smoke check failed during Livebook setup.
+              Selecto retarget smoke check failed during Livebook setup.
 
-              The loaded Selecto runtime does not accept target-root post-retarget filters like {"quantity", 2}.
-              Disconnect/reconnect the Livebook runtime, then rerun the setup cell so Mix.install reloads the local Selecto checkout.
+              The loaded Selecto runtime does not root a retargeted query at its target, so filters like {"quantity", 2} cannot follow Selecto.retarget/3.
+              Disconnect/reconnect the Livebook runtime, then rerun the setup cell so Mix.install reloads Selecto.
 
               Loaded Selecto.Query from: #{loaded_module_path(Selecto.Query)}
               Original error: #{Exception.message(error)}

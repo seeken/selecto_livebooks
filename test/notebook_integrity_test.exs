@@ -378,21 +378,38 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     assert params == [1, 3]
   end
 
-  test "retarget workbook accepts target-root post filters" do
+  test "retarget workbook roots the query at order items with order filters as context" do
     query =
       SelectoLivebooks.Domains.OrderDomain.domain()
       |> Selecto.configure(compile_context())
       |> Selecto.filter({"status", "delivered"})
-      |> Selecto.retarget(:order_items, subquery_strategy: :exists)
+      |> Selecto.retarget(:order_items, strategy: :exists)
       |> Selecto.post_retarget_filter({"quantity", 2})
-      |> Selecto.select(["order_items.product_id", "order_items.quantity"])
+      |> Selecto.select(["product_id", "quantity"])
       |> Selecto.limit(5)
 
     {sql, params} = Selecto.to_sql(query)
 
-    assert sql =~ ~r/from\s+order_items\s+t/i
-    assert sql =~ ~r/t\.quantity\s*=\s*\$2/i
-    assert params == ["delivered", 2]
+    assert sql =~ ~r/from\s+order_items\s+selecto_root/i
+    assert sql =~ ~r/selecto_root\.quantity\s*=\s*\$1/i
+    assert sql =~ ~r/exists\s*\(select 1 from \(/i
+    assert sql =~ ~r/\.status\s*=\s*\$2/i
+    assert params == [2, "delivered"]
+  end
+
+  test "retarget workbook context keeps join filters" do
+    {sql, params} =
+      SelectoLivebooks.Domains.OrderDomain.domain()
+      |> Selecto.configure(compile_context())
+      |> Selecto.filter({"status", "delivered"})
+      |> Selecto.filter({"customer.tier", "vip"})
+      |> Selecto.retarget(:order_items)
+      |> Selecto.select(["product_id", "quantity"])
+      |> Selecto.to_sql()
+
+    assert sql =~ ~r/selecto_root\.id in \(\s*select order_items\.id/i
+    assert sql =~ ~r/customer\.tier\s*=\s*\$2/i
+    assert params == ["delivered", "vip"]
   end
 
   test "selection workbook nested subselect generates child JSON aggregate" do

@@ -337,8 +337,13 @@ FilteringLab.Helpers.run("JSON + array filters", json_array_filter_query)
 
 ## 10) Pre- vs Post-Retarget Filters
 
-Compare pre-retarget and post-retarget filtering behavior and inspect the resulting SQL.
-For the current Selecto build, post-retarget filters should target the retarget root field name directly (for example `"quantity"`), so this example uses `Selecto.post_retarget_filter/2`.
+Compare filters added before and after `retarget/3` and inspect the resulting SQL.
+Filters before the retarget form its context: they decide which order items the
+order query reaches. Filters after it apply to the `order_items` rows and use
+their bare field names (`"quantity"`); `Selecto.post_retarget_filter/2` is
+`filter/2` on a retargeted query. A context filter on the retarget path's own
+join (`order_items.quantity`) constrains that join, so it reaches the same rows
+as the matching target filter.
 
 ```elixir
 import Selecto.ExprMacros
@@ -346,37 +351,42 @@ import Selecto.ExprMacros
 retarget_pre_filter_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.filter(where(status == "delivered"))
-  |> Selecto.retarget(:order_items, subquery_strategy: :exists)
-  |> Selecto.select(select([order_items.product_id, order_items.quantity, order_items.line_total]))
+  |> Selecto.retarget(:order_items, strategy: :exists)
+  |> Selecto.select(select([product_id, quantity, line_total]))
   |> Selecto.limit(10)
 
 retarget_pre_and_post_filter_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.filter(where(status == "delivered"))
-  |> Selecto.retarget(:order_items, subquery_strategy: :exists)
+  |> Selecto.retarget(:order_items, strategy: :exists)
   |> Selecto.post_retarget_filter({"quantity", 2})
-  |> Selecto.select(select([order_items.product_id, order_items.quantity, order_items.line_total]))
+  |> Selecto.select(select([product_id, quantity, line_total]))
   |> Selecto.limit(10)
 
 retarget_post_only_query =
   Selecto.configure(config.order_domain, config.repo)
-  |> Selecto.filter(where(status == "delivered"))
-  |> Selecto.retarget(:order_items, subquery_strategy: :exists, preserve_filters: false)
+  |> Selecto.retarget(:order_items, strategy: :exists)
   |> Selecto.post_retarget_filter({"quantity", 2})
-  |> Selecto.select(select([order_items.product_id, order_items.quantity, order_items.line_total]))
+  |> Selecto.select(select([product_id, quantity, line_total]))
+  |> Selecto.limit(10)
+
+retarget_path_filter_query =
+  Selecto.configure(config.order_domain, config.repo)
+  |> Selecto.filter(where(status == "delivered"))
+  |> Selecto.filter(where(order_items.quantity == 2))
+  |> Selecto.retarget(:order_items, strategy: :exists)
+  |> Selecto.select(select([product_id, quantity, line_total]))
   |> Selecto.limit(10)
 
 for {label, query} <- [
-      {"Pre-retarget filter only", retarget_pre_filter_query},
-      {"Pre + post retarget filters", retarget_pre_and_post_filter_query},
-      {"Post-retarget only (preserve_filters: false)", retarget_post_only_query}
+      {"Context filter only", retarget_pre_filter_query},
+      {"Context + target filters", retarget_pre_and_post_filter_query},
+      {"Target filter only (no context filter)", retarget_post_only_query},
+      {"Context filter on the order_items join", retarget_path_filter_query}
     ] do
-  {sql, _params} = Selecto.to_sql(query)
-  sql_downcase = String.downcase(sql)
-
   IO.puts("\n#{label}")
-  IO.puts("Contains status predicate? #{String.contains?(sql_downcase, "status")}")
-  IO.puts("Contains quantity predicate? #{String.contains?(sql_downcase, "quantity")}")
+  IO.puts("Context filters: #{inspect(Selecto.pre_retarget_filters(query))}")
+  IO.puts("Target filters: #{inspect(Selecto.post_retarget_filters(query))}")
 
   FilteringLab.Helpers.run(label, query, 5)
 end
