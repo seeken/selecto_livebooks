@@ -185,3 +185,13 @@ remain outside this execution evidence.
   possible relationship policies.
 - Larger exports, query-plan regressions and high-volume performance need a
   controlled benchmark dataset. Tiny fixtures are for correctness.
+
+## October 4, 2026 governance refresh
+
+The flat-write tour now proves both boundaries: a caller-built adapter command
+is refused with `ungoverned_write`, and a host-authored cardinality policy
+reaches the adapter through Updato and rolls back a mismatched mutation.
+Missing policy is never permission. The notebook keeps all data in temporary
+tables and asserts the persisted state after rejection and rollback.
+Dependency source revisions and recorded certification profiles are separate;
+a notebook pass does not upgrade an adapter's central certificate.

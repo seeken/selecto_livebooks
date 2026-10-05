@@ -2,7 +2,7 @@
 
 ## Overview
 
-This notebook is a runnable tour of SelectoUpdato 0.4's flat write surface.
+This notebook is a runnable tour of the current SelectoUpdato flat write surface.
 Updato validates domain-governed intent and compiles a portable command; the
 configured database adapter owns SQL, driver interaction, transactions, and
 affected-row cardinality checks. The companion nested-write workbook continues
@@ -69,7 +69,9 @@ flowchart LR
 
 The domain grants the operation, writable fields, tenant scope, cardinality,
 and foreign-key source. A caller cannot replace those policies with request
-parameters.
+parameters. Missing write policy fails closed. Updato issues a single-use
+authorization for the exact governed payload; the adapter's normal write API
+refuses a caller-built command without it.
 
 ## Setup: a direct Postgrex connection and isolated tables
 
@@ -322,9 +324,10 @@ upserted
 
 ## Transactional cardinality rollback
 
-Portable commands carry expected cardinality. The PostgreSQL adapter executes
-an individual command in a transaction, so a mismatch rolls back the tentative
-mutation instead of returning an error after a partial commit.
+Portable commands carry expected cardinality. First prove that a caller-built
+command cannot bypass governance. Then use a host-authored domain policy and
+the normal Updato entry point to attempt the same mismatch. The adapter rolls
+back the tentative mutation inside its transaction.
 
 ```elixir
 {:ok, rollback_probe} =
@@ -341,8 +344,22 @@ mutation instead of returning an error after a partial commit.
     expected_cardinality: {:exactly, 2}
   })
 
-{:error, rollback_error} =
+{:error, raw_command_error} =
   SelectoDBPostgreSQL.Adapter.execute_write(connection, rollback_probe)
+
+:ungoverned_write = raw_command_error.type
+
+rollback_domain = put_in(domain, [:writes, :operations, :update, :expected_cardinality], {:exactly, 2})
+rollback_selecto = %{selecto | domain: rollback_domain}
+
+rollback_operation =
+  rollback_domain
+  |> SelectoUpdato.new()
+  |> SelectoUpdato.update(%{state: "should-roll-back"})
+  |> SelectoUpdato.filter({:external_id, run_id})
+
+{:error, rollback_error} =
+  SelectoUpdato.execute(rollback_operation, rollback_selecto, context: context)
 
 :cardinality_mismatch = rollback_error.type
 

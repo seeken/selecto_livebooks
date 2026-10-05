@@ -673,7 +673,7 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     assert verification =~ "Selecto.Verification.WriteCapabilitySafety.verify()"
     assert verification =~ "SelectoUpdato.Verification.AuthorizationLifecycleSafety.verify()"
     assert verification =~ "SelectoDBPostgreSQL.Verification.TransactionProtocol.check()"
-    assert updato =~ "SelectoUpdato 0.4"
+    assert updato =~ ":ungoverned_write"
     assert updato =~ "required_on: [:insert]"
     assert updato =~ "returning: :all"
     assert updato =~ ".returning([:id, :name, :state])"
