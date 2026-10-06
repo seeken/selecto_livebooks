@@ -10,10 +10,10 @@
   ],
   selecto_updato: [
     git: "git@github.com:seeken/selecto_updato.git",
-    ref: "28ac872047e6e0e47f5ba3d93663de1ed9b17bbf"
+    ref: "b0b0fd4f496d2a1956533c3547352dbcc4186694"
   ],
   selecto_components: [
     git: "git@github.com:seeken/selecto_components.git",
-    ref: "11b37af775d8f524265c2a6ed9dbed091972c4d0"
+    ref: "cef5ff10daa42b1ea73e5da44bd47ed68a073775"
   ]
 }
