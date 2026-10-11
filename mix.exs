@@ -32,7 +32,7 @@ defmodule SelectoLivebooks.MixProject do
       selecto_updato_dep(),
       selecto_components_dep(),
       {:jason, "~> 1.4"},
-      {:decimal, "~> 2.0"}
+      {:decimal, "~> 3.1 and >= 3.1.2"}
     ]
   end
 
