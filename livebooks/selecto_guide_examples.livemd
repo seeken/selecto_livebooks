@@ -3157,7 +3157,7 @@ Expected output checks (Hierarchical Join Types + Runtime):
 
 ## Section 41: Tenant Scope Helpers on Read Queries
 
-This section focuses on Selecto's read-side tenant helpers. It uses the existing `customer_id` column as the tenant field so the generated query remains runnable against the sample dataset.
+This section focuses on Selecto's read-side tenant helpers. It declares the existing `customer_id` column as the domain's tenant field (`source.tenant_field`) so the generated query remains runnable against the sample dataset. Selecto binds a trusted tenant only to the root's declared tenant field and refuses an undeclared one with `missing_tenant_scope`.
 
 ### Attach Tenant Context, Apply Required Filters, and Validate Scope
 
@@ -3167,6 +3167,7 @@ Business question: How can a query enforce a required tenant/customer scope befo
 tenant_domain =
   config.order_domain
   |> Map.put(:tenant_required, true)
+  |> put_in([:source, :tenant_field], "customer_id")
 
 tenant_query =
   Selecto.configure(tenant_domain, config.repo)

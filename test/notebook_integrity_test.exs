@@ -303,6 +303,7 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     domain =
       SelectoLivebooks.Domains.OrderDomain.domain()
       |> Map.put(:tenant_required, true)
+      |> put_in([:source, :tenant_field], "customer_id")
 
     query =
       domain
