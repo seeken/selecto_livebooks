@@ -9,6 +9,7 @@ defmodule SelectoLivebooks.ActionFixture do
       source: %{
         source_table: "livebook_approvals",
         primary_key: :id,
+        tenant_field: :tenant_id,
         fields: [:id, :tenant_id, :state, :ready, :reviewed_by_id, :note, :eligible],
         columns: %{
           id: %{type: :integer},

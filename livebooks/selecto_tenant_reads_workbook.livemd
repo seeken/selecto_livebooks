@@ -31,10 +31,13 @@ base = Selecto.configure(domain, runtime, mode: :strict)
 trusted_tenant_id = 101
 ```
 
-## 2) Metadata alone is not an applied row filter
+## 2) An attached trusted tenant limits every read
 
-Both a missing tenant and a tenant that has only been attached fail validation.
-Compilation fails closed until the matching required row filter is applied.
+A missing tenant fails validation, and compilation fails closed. A trusted
+tenant attached with `with_tenant/2` is bound onto the root's declared
+`source.tenant_field` on every read, whether or not `apply_tenant_scope/1` has
+run. Applying the scope also records it as a required row filter, so a
+disagreeing required tenant filter is refused as a mismatch.
 
 ```elixir
 assert {:error, %Selecto.Error{type: :validation_error}} = Selecto.validate_tenant_scope(base)
@@ -43,7 +46,9 @@ assert_raise RuntimeError, ~r/Tenant scope is required but missing/, fn ->
 end
 
 attached = Selecto.with_tenant(base, tenant_id: trusted_tenant_id)
-assert {:error, %Selecto.Error{}} = Selecto.validate_tenant_scope(attached)
+assert :ok = Selecto.validate_tenant_scope(attached)
+{_attached_sql, attached_params} = attached |> Selecto.select(["id"]) |> Selecto.to_sql()
+assert trusted_tenant_id in attached_params
 
 scoped = Selecto.apply_tenant_scope(attached)
 assert :ok = Selecto.validate_tenant_scope(scoped)
