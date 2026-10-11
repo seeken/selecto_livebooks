@@ -99,7 +99,7 @@ end
 carrier_domain = %{
   name: "Carrier lookup", tenant_required: true,
   source: %{
-    source_table: "livebook_carriers", primary_key: :id,
+    source_table: "livebook_carriers", primary_key: :id, tenant_field: :tenant_id,
     fields: [:id, :tenant_id, :name, :city, :active],
     columns: %{
       id: %{type: :integer}, tenant_id: %{type: :integer},

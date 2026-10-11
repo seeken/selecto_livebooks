@@ -61,6 +61,7 @@ defmodule SelectoLivebooks.WorkflowFixture do
       source: %{
         source_table: "livebook_workflow_orders",
         primary_key: :id,
+        tenant_field: :tenant_id,
         fields: [:id, :tenant_id, :reference, :priority, :status, :visible],
         redact_fields: [],
         columns: %{
