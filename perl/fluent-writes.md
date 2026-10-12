@@ -22,10 +22,11 @@ use warnings;
 use utf8;
 use DBI ();
 use JSON::PP ();
+use Storable qw(dclone);
 use Selecto;
 
 my @observations;
-sub record { my ($id, %values) = @_; push @observations, {id => $id, %values} }
+sub record { my ($id, %values) = @_; push @observations, dclone({id => $id, %values}) }
 sub check { die "workbook assertion failed: $_[1]\n" unless $_[0] }
 sub refused {
     my ($work) = @_;
