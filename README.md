@@ -2,6 +2,9 @@
 
 A runnable learning companion for Selecto, SelectoUpdato, and SelectoComponents.
 Start with a short workflow, then use the SQL-operator workbooks as references.
+The [common native API workbook](livebooks/selecto_common_native_api_workbook.livemd)
+binds an Elixir engine tenant once and verifies writes, actions, transactions,
+custom tenant columns and independent write scopes against PostgreSQL.
 The native [Perl fluent-write workbook](perl/fluent-writes.md) covers tenant
 defaults, SQL previews, domain actions, and PostgreSQL editable rows. Run its
 cells with `python3 scripts/run_perl_workbook.py`; it uses the sibling

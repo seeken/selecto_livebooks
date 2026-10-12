@@ -15,6 +15,7 @@ defmodule SelectoLivebooks.NotebookExecutionTest do
     port: "SELECTO_LIVEBOOKS_DB_PORT"
   ]
   @workbooks [
+    "selecto_common_native_api_workbook.livemd",
     "selecto_action_execution_workbook.livemd",
     "selecto_co_domains_workbook.livemd",
     "selecto_updato_feature_tour.livemd",

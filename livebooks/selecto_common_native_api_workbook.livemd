@@ -1,0 +1,122 @@
+# Common Native API: Bind Once, Read, Write, and Invoke Actions
+
+This workbook uses a temporary PostgreSQL table and the public Elixir APIs.
+Set `SELECTO_LIVEBOOKS_DB*` to an existing disposable database. The authenticated
+host supplies the tenant; request data never establishes tenant authority.
+
+## Setup
+
+```elixir
+Code.require_file(Path.expand("support/bootstrap.exs", __DIR__))
+SelectoLivebooksNotebookBootstrap.install_updato!()
+import ExUnit.Assertions
+{:ok, connection} = Postgrex.start_link(Keyword.put(SelectoLivebooksNotebookBootstrap.repo_config(), :pool_size, 1))
+Postgrex.query!(connection, "CREATE TEMP TABLE common_api_items(id integer PRIMARY KEY, org_id integer NOT NULL, site_id integer, name text, state text)", [])
+
+domain = %{
+  name: "Common API items",
+  source: %{source_table: "common_api_items", primary_key: :id, tenant_field: :org_id,
+    fields: [:id, :org_id, :site_id, :name, :state], associations: %{},
+    columns: %{id: %{type: :integer}, org_id: %{type: :integer}, site_id: %{type: :integer}, name: %{type: :string}, state: %{type: :string}}},
+  schemas: %{}, joins: %{},
+  writes: %{
+    operations: %{insert: %{enabled: true, returning: :all}, update: %{enabled: true, returning: :all}, delete: %{enabled: true}},
+    fields: Map.new([:id, :org_id, :site_id, :name, :state], &{&1, %{insertable: true, updatable: true}}),
+    transitions: %{state: %{"done" => ["archived"]}}
+  },
+  capabilities: %{"items.archive" => %{operations: [:action, :update]}},
+  actions: %{archive: %{type: :transition, capability: "items.archive",
+    transition: %{field: :state, from: "done", to: "archived"},
+    inputs: %{name: %{type: :string, required: true}},
+    execution: %{kind: :updato, operation: :update, set: %{state: "archived", name: {:input, :name}}}}}
+}
+base = Selecto.configure(domain, connection, adapter: SelectoDBPostgreSQL.Adapter)
+engine = Selecto.with_tenant(base, 8)
+assert is_nil(Selecto.tenant(base))
+assert Selecto.tenant(engine).tenant_field == "org_id"
+```
+
+## Insert without repeating the tenant
+
+The domain declares `org_id` once. No matching required predicate, write-level
+tenant call, or tenant assignment is needed. Preview still shows the SQL and
+bound tenant value. `SelectoUpdato.new(domain)` remains available for explicit
+operation/engine composition.
+
+```elixir
+draft = engine |> Selecto.write() |> SelectoUpdato.insert(%{id: 1, name: "Test", state: "done"}) |> SelectoUpdato.returning([:id, :org_id, :name])
+assert {:ok, preview} = SelectoUpdato.preview(draft)
+assert {:ok, _result} = SelectoUpdato.execute(draft)
+assert Postgrex.query!(connection, "SELECT org_id FROM common_api_items WHERE id=1", []).rows == [[8]]
+IO.inspect(preview, label: "SQL and bound values")
+Postgrex.query!(connection, "INSERT INTO common_api_items VALUES(2,9,42,'Other','done')", [])
+assert {:ok, {[[1]], _, _}} = engine |> Selecto.select(["id"]) |> Selecto.execute()
+
+for value <- [9, nil] do
+  assert {:error, _} = engine |> Selecto.write() |> SelectoUpdato.insert(%{id: 3, org_id: value, name: "Refused"}) |> SelectoUpdato.execute()
+end
+assert {:ok, _} = engine |> Selecto.write() |> SelectoUpdato.insert(%{id: 3, org_id: 8, name: "Equal"}) |> SelectoUpdato.execute()
+assert {:error, _} = engine |> Selecto.write() |> SelectoUpdato.update(%{name: "Refused"}) |> SelectoUpdato.filter({:id, 2}) |> SelectoUpdato.expected_cardinality({:exactly, 1}) |> SelectoUpdato.execute()
+assert Postgrex.query!(connection, "SELECT name FROM common_api_items WHERE id=2", []).rows == [["Other"]]
+```
+
+## Invoke a domain action through the same engine
+
+Each preview and execution plans and authorizes afresh. The default action
+adapter handles flat governed writes. Collection and event-stream actions
+require an explicit host `action_execution_adapter`; unavailable behavior
+refuses. The host owns the capability resolver and actor context.
+
+```elixir
+observer = self()
+policy = fn request, _context, _opts ->
+  send(observer, {:authorized, request.phase})
+  :enabled
+end
+action = engine |> Selecto.action(:archive) |> SelectoUpdato.target(1) |> SelectoUpdato.inputs(%{name: "Closed"})
+assert {:ok, _} = SelectoUpdato.preview(action, capability_resolver: policy)
+assert_receive {:authorized, :preview}
+assert {:ok, _} = SelectoUpdato.execute(action, capability_resolver: policy)
+assert_receive {:authorized, :execute}
+assert Postgrex.query!(connection, "SELECT state,name FROM common_api_items WHERE id=1", []).rows == [["archived", "Closed"]]
+assert {:error, _} = engine |> Selecto.action(:archive) |> SelectoUpdato.target(2) |> SelectoUpdato.inputs(%{name: "Refused"}) |> SelectoUpdato.execute(capability_resolver: policy)
+assert {:error, _} = SelectoUpdato.execute(action, context: %{tenant_id: 9}, capability_resolver: policy)
+assert Postgrex.query!(connection, "SELECT state,name FROM common_api_items WHERE id=2", []).rows == [["done", "Other"]]
+```
+
+## Transaction callback engines inherit context
+
+The adapter owns the transaction. Pattern-match successful write results so a
+failure aborts the callback; ordinary callback return values follow the native
+adapter's transaction contract.
+
+```elixir
+assert {:ok, :committed} = Selecto.transaction(engine, fn tx ->
+  assert Selecto.tenant(tx) == Selecto.tenant(engine)
+  {:ok, _} = tx |> Selecto.write() |> SelectoUpdato.insert(%{id: 4, name: "Transaction", state: "done"}) |> SelectoUpdato.execute()
+  {:ok, _} = tx |> Selecto.action(:archive) |> SelectoUpdato.target(4) |> SelectoUpdato.inputs(%{name: "Tx action"}) |> SelectoUpdato.execute(capability_resolver: policy)
+  :committed
+end)
+assert Postgrex.query!(connection, "SELECT org_id,state FROM common_api_items WHERE id=4", []).rows == [[8, "archived"]]
+assert {:error, _} = Selecto.transaction(engine, fn tx ->
+  {:ok, _} = tx |> Selecto.write() |> SelectoUpdato.insert(%{id: 5, name: "Rollback"}) |> SelectoUpdato.execute()
+  raise "abort synthetic transaction"
+end)
+assert Postgrex.query!(connection, "SELECT count(*) FROM common_api_items WHERE id=5", []).rows == [[0]]
+```
+
+## Independent scope columns retain independent values
+
+The root tenant is `org_id = 8`, while the authored write scope requires
+`site_id = 42`. The helper never copies 8 into the site column. Caller filters
+cannot establish site authority.
+
+```elixir
+two = domain |> put_in([:writes, :scope], %{tenant: %{field: :site_id, required: true, satisfied_by: [:trusted_context]}}) |> Map.put(:required_filters, [{"site_id", 42}])
+scoped = Selecto.configure(two, connection, adapter: SelectoDBPostgreSQL.Adapter) |> Selecto.with_tenant(8)
+assert {:ok, _} = scoped |> Selecto.write() |> SelectoUpdato.insert(%{id: 6, site_id: 42, name: "Two scopes"}) |> SelectoUpdato.execute()
+assert Postgrex.query!(connection, "SELECT org_id,site_id FROM common_api_items WHERE id=6", []).rows == [[8,42]]
+assert {:error, _} = scoped |> Selecto.write() |> SelectoUpdato.insert(%{id: 7, site_id: 8, name: "Refused"}) |> SelectoUpdato.execute()
+assert {:error, _} = scoped |> Selecto.write() |> SelectoUpdato.delete() |> SelectoUpdato.filter({:id, 2}) |> SelectoUpdato.expected_cardinality({:exactly, 1}) |> SelectoUpdato.execute()
+GenServer.stop(connection)
+```
