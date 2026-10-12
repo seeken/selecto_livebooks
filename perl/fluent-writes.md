@@ -86,8 +86,7 @@ $contract->{actions}{archive} = {
 $contract->{capabilities}{'items.archive'} = {operations => ['action', 'update'], action => 'archive'};
 my $domain = Selecto::Domain->parse($contract);
 my $adapter = Selecto->adapter($backend => (dbh => $dbh));
-my $engine = Selecto::Engine->new(domain => $domain, adapter => $adapter,
-    write_context => {tenant_id => 8});
+my $engine = Selecto::Engine->new(domain => $domain, adapter => $adapter)->with_tenant(8);
 record('setup', backend => $backend, domain => $contract);
 ```
 
@@ -98,7 +97,7 @@ native SQL and parameters, performs no target DML, and does not consume the draf
 `returning` returns ordinary values; it does not issue an editable row handle.
 
 ```perl
-my $write = Selecto::Write->new($engine)->insert()->with_tenant(8);
+my $write = $engine->write()->insert();
 $write->assignments(name => 'Tokyo 東京', state => 'done');
 $write->returning(qw(id tenant_id name));
 my $insert_preview = $write->preview();
@@ -121,7 +120,7 @@ and is refused rather than overwritten. The persisted row count stays one.
 my @tenant_refusals;
 for my $tenant (9, undef) {
     push @tenant_refusals, refused(sub {
-        Selecto::Write->new($engine)->insert()->with_tenant(8)
+        $engine->write()->insert()
             ->assignments(name => 'Refused', state => 'done', tenant_id => $tenant)->execute();
     });
 }
@@ -143,7 +142,7 @@ my $policy = sub {
     push @phases, $request->{phase};
     return ($context->{actor}{id} // '') eq 'teacher' ? 'enabled' : 'disabled';
 };
-my $action = Selecto::Write->new($engine)->action('archive')->with_tenant(8);
+my $action = $engine->action('archive');
 $action->target($id);
 $action->inputs(reason => 'completed');
 my $action_preview = $action->preview(resolver => $policy, context => {actor => {id => 'teacher'}});
@@ -154,9 +153,9 @@ check(join(',', @phases) eq 'preview,execute', 'fresh permission for each phase'
 check($dbh->selectrow_array('SELECT state FROM helper_items WHERE id = ?', undef, $id) eq 'archived', 'declared effect persisted');
 record('domain-actions', preview => $action_preview,
     result => {%$action_result, result => $action_result->{result}->to_hash}, phases => \@phases);
-my $stale = refused(sub { Selecto::Write->new($engine)->action('archive')->target($id)
+my $stale = refused(sub { $engine->action('archive')->target($id)
     ->inputs(reason => 'again')->execute(resolver => $policy, context => {actor => {id => 'teacher'}}) });
-my $missing = refused(sub { Selecto::Write->new($engine)->action('archive')->target($id)->inputs(reason => 'again')->execute() });
+my $missing = refused(sub { $engine->action('archive')->target($id)->inputs(reason => 'again')->execute() });
 record('action-refusals', stale_transition => $stale, missing_resolver => $missing);
 ```
 
@@ -174,7 +173,7 @@ my ($editable_id, $expired_row);
 if ($backend eq 'postgresql') {
     my $created = $engine->transaction(sub {
         my ($tx) = @_;
-        my $w = Selecto::Write->new($tx)->insert()->with_tenant(8)
+        my $w = $tx->write()->insert()
             ->assignments(name => 'Editable', state => 'done')->return_for_update(qw(id tenant_id name));
         my $preview = $w->preview();
         my $parent = $w->execute();
@@ -194,7 +193,7 @@ if ($backend eq 'postgresql') {
 } else {
     my $unsupported = refused(sub { $engine->transaction(sub {
         my ($tx) = @_;
-        Selecto::Write->new($tx)->insert()->assignments(name => 'Unsupported', state => 'done')
+        $tx->write()->insert()->assignments(name => 'Unsupported', state => 'done')
             ->return_for_update('id')->execute();
     }) });
     check($dbh->selectrow_array('SELECT count(*) FROM helper_items') == 1, 'unsupported handle inserted nothing');
@@ -224,7 +223,7 @@ if ($backend eq 'postgresql') {
     });
     my $rollback = refused(sub { $engine->transaction(sub {
         my ($tx) = @_;
-        my $parent = Selecto::Write->new($tx)->insert()->assignments(name => 'Rolled back', state => 'done')
+        my $parent = $tx->write()->insert()->assignments(name => 'Rolled back', state => 'done')
             ->return_for_update('id')->execute();
         refused(sub { $parent->row()->related_write('notes')->insert()->assignments(name => 'First note')->execute() });
     }) });
