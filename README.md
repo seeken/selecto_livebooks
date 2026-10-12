@@ -2,6 +2,10 @@
 
 A runnable learning companion for Selecto, SelectoUpdato, and SelectoComponents.
 Start with a short workflow, then use the SQL-operator workbooks as references.
+The native [Perl fluent-write workbook](perl/fluent-writes.md) covers tenant
+defaults, SQL previews, domain actions, and PostgreSQL editable rows. Run its
+cells with `python3 scripts/run_perl_workbook.py`; it uses the sibling
+`selecto-perl` revision pinned in that runner, independently of the Elixir cells.
 The [September 2026 relevance review](docs/workbook-review.md) records coverage,
 corrections, and what the checks do—and do not—prove.
 
