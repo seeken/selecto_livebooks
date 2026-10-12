@@ -1,0 +1,39 @@
+# .NET Common Native API
+
+The host binds a tenant once with
+`EngineQueryContext.Configure(domain, adapter).WithTenant(8)`. The domain owns
+`source.tenant_field`; fluent writes omit the matching tenant assignment, while
+reads, actions and transaction callbacks retain it.
+
+This notebook runs the committed C# sample against an in-memory SQLite database.
+It requires the .NET SDK selected by `selecto-dotnet/global.json` and `mise` on
+PATH. It creates no persistent database. Set `SELECTO_DOTNET_PATH` when the native
+checkout is not a sibling of `selecto_livebooks`. The verified native revision is
+`f312f91` (see the native migration audit for the full source snapshot).
+
+## Inspect the native C# program
+
+```elixir
+repo = System.get_env("SELECTO_DOTNET_PATH") || Path.expand("../../selecto-dotnet", __DIR__)
+source = Path.join(repo, "examples/CommonNativeApi/Program.cs")
+IO.puts(File.read!(source))
+```
+
+The sample supplies a real domain, previews SQL with separate parameters,
+inserts without `org_id`, invokes the domain's archive action in a transaction,
+and verifies that a refused foreign-row delete rolls back an earlier insert.
+The final scoped read sees only the committed tenant's archived row.
+
+## Execute and verify
+
+```elixir
+mise = System.find_executable("mise") || raise "mise executable is required"
+{output, status} = System.cmd(mise, ["exec", "--", "dotnet", "run", "--project", "examples/CommonNativeApi", "--configuration", "Release"], cd: repo, stderr_to_stdout: true)
+IO.puts(output)
+if status != 0 or not String.contains?(output, "PASS common native API:"), do: raise "Native C# sample failed"
+```
+
+For broader regression coverage, run `mise exec -- dotnet test --configuration
+Release` in the native checkout. PostgreSQL integration checks additionally
+require a disposable `SELECTO_CERT_DOTNET_POSTGRESQL_URL`. These checks do not
+claim live coverage of every other adapter or arbitrary host action executor.
