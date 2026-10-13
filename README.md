@@ -206,3 +206,4 @@ customers, orders, order items, hierarchical employees, and reviews.
 
 - [.NET common native API workbook](livebooks/selecto_dotnet_common_native_api_workbook.livemd): executable C# sample, SQL, inherited scope, actions and transaction rollback.
 - [JVM common native API workbook](livebooks/selecto_jvm_common_native_api_workbook.livemd): executable Java sample, native Kotlin/Scala maps, SQL, inherited actions and transaction rollback.
+- [Ruby common native API workbook](livebooks/selecto_ruby_common_native_api_workbook.livemd): executable native hash domain, SQL, inherited actions and transaction rollback.
