@@ -1,0 +1,57 @@
+# Ruby Common Native API
+
+Configure the host-owned domain and connected adapter, then bind the trusted
+tenant once with `Selecto::Engine.configure(domain, adapter).with_tenant(8)`.
+The domain declares `source.tenant_field`; fluent writes omit its matching value,
+while reads, actions and transaction callbacks inherit it.
+
+This notebook inspects and executes the native Ruby program on in-memory SQLite.
+It requires `mise`, the Ruby version selected by `selecto-rails/mise.toml` and the
+native repository's installed bundle. Set `SELECTO_RUBY_PATH` if that checkout is
+not a sibling of `selecto_livebooks`. Verified native source: `b41d2800e8675b28c6d851d5781b6267f3445fb7`.
+
+## Inspect The Native Ruby Program
+
+```elixir
+repo = System.get_env("SELECTO_RUBY_PATH") || Path.expand("../../selecto-rails", __DIR__)
+IO.puts(File.read!(Path.join(repo, "examples/common_native_api.rb")))
+```
+
+The sample supplies a native hash domain, previews actual SQL and separate
+parameters, inserts without `org_id`, and invokes the declared archive action
+through an inherited transaction engine. A separate callback inserts another
+row, then attempts a refused foreign-tenant delete. Its earlier insert rolls
+back. Final scoped rows are `[[2, 8, "Test", "archived"]]`.
+
+## Execute And Verify
+
+```elixir
+mise = System.find_executable("mise") || raise "mise executable is required"
+{output, status} = System.cmd(mise, ["exec", "--", "ruby", "-rbundler/setup", "-Ilib", "examples/common_native_api.rb"], cd: repo, stderr_to_stdout: true)
+IO.puts(output)
+if status != 0 or not String.contains?(output, "PASS: Ruby common native API"), do: raise "Native Ruby sample failed"
+```
+
+The SQLite insert preview binds `[2, "Test", "done", 8]` to four `?` placeholders.
+The tenant stays in SQL even though assignments omit it. Native field, scope,
+cardinality, returning and conflict rules remain authoritative. Each action
+preview/execution plans and authorizes afresh using a phase-bound single-use
+grant; preview never grants execution authority.
+
+```ruby
+engine.transaction do |tx|
+  tx.write.insert(id: 3, name: "Test", state: "done").execute
+  tx.action("archive").target(3).execute(resolver: host_resolver)
+end
+```
+
+Callbacks are synchronous on the calling thread and fiber, inherit domain and
+tenant, and expire on completion. Managed work rolls back on escaping exceptions
+and nonlocal block exits; nested work uses native savepoints. Host/external
+transactions keep ownership. Eager reads are supported; streaming explicitly
+refuses inside the callback. Custom adapters opt into transactions separately.
+
+Run `mise exec -- ruby -rbundler/setup -S rake test` in the Ruby checkout for the
+native regression gate; disposable `SELECTO_RAILS_TEST_POSTGRES_URL` enables the
+PostgreSQL scenarios. These checks do not claim live coverage of other providers
+or exhaustive propagation across every related read surface.
