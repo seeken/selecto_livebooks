@@ -209,3 +209,5 @@ customers, orders, order items, hierarchical employees, and reviews.
 - [Ruby common native API workbook](livebooks/selecto_ruby_common_native_api_workbook.livemd): executable native hash domain, SQL, inherited actions and transaction rollback.
 - [JavaScript and TypeScript common native API workbook](livebooks/selecto_typescript_common_native_api_workbook.livemd): executable native domain, SQL, inherited actions and transaction rollback.
 - [Python common native API workbook](livebooks/selecto_python_common_native_api_workbook.livemd): executable native domain, SQL, inherited actions and transaction rollback.
+
+The remaining runtime migration and its explicit native/remote/compiler capability boundaries are documented in [Book Appendix W](https://github.com/seeken/selecto_book/blob/master/book/appendices/w-remaining-common-native-api.md). Native runtime regression fixtures are linked from each runtime README; these are not additional executable Livebook kernels.
