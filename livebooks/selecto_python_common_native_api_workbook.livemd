@@ -1,0 +1,45 @@
+# Python Common Native API
+
+The host declares `source.tenant_field` once in its native domain and binds
+trusted context once with `Engine.configure(domain, adapter).with_tenant(8)`. Ordinary assignments omit the matching
+tenant. Reads, fluent writes, actions and callback engines inherit the binding.
+
+This notebook inspects and executes the complete native program on in-memory
+SQLite. Install the native repository's pinned development environment first.
+Set `SELECTO_PYTHON_PATH` if the checkout is not a sibling of
+`selecto_livebooks`. Verified native source: `e78c7cddb81e470854ceb8ba89c88cca3ef12455`.
+
+## Inspect The Native Program
+
+```elixir
+repo = System.get_env("SELECTO_PYTHON_PATH") || Path.expand("../../selecto-python", __DIR__)
+IO.puts(File.read!(Path.join(repo, "examples/common_native_api.py")))
+```
+
+The sample declares a native domain structure, previews actual SQL and separate
+parameters, inserts without `org_id`, then invokes the archive action inside an
+inherited transaction. A second callback inserts another row and attempts a
+refused foreign-tenant delete. That callback rolls back its preceding insert.
+Final scoped rows are `[[2, 8, "Test", "archived"]]`.
+
+## Execute And Verify
+
+```elixir
+uv = System.find_executable("uv") || raise "uv executable is required"
+{output, status} = System.cmd(uv, ["run", "python", "examples/common_native_api.py"], cd: repo, stderr_to_stdout: true)
+IO.puts(output)
+if status != 0 or not String.contains?(output, "PASS: Python common native API"), do: raise "Native Python sample failed"
+```
+
+The SQLite insert preview binds `[2, "Test", 8, "done"]` to four `?` placeholders. The tenant
+stays in SQL even though the calling code omits it. Native permissions,
+cardinality, returning, conflict identities and scope rules remain authoritative.
+Each action invocation plans and authorizes its own phase; preview never grants
+execution authority. Independently scoped root and site columns keep separate
+values.
+
+Callbacks are synchronous and sequential on the calling thread/task. They inherit the domain/tenant and expire on completion. Native savepoints isolate nested work; host/external transactions retain ownership. Streaming and awaitable/generator callback returns refuse. Providers without savepoints retain native refusal.
+
+Run `scripts/quality` and `scripts/package-check` in the native checkout for the release gate. Configure its disposable
+PostgreSQL integration/observer URLs to enable live service checks. These checks
+do not claim live coverage of every other provider or every related read path.
