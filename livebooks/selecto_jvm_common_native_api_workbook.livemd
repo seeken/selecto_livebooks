@@ -1,0 +1,70 @@
+# JVM Common Native API
+
+Configure the host-owned domain and connected adapter, then bind the trusted
+tenant once with `SelectoEngine.configure(domain, adapter).withTenant(8)`.
+The domain supplies `source.tenant_field`; fluent writes omit the matching
+tenant assignment, while reads, actions and transaction callbacks inherit it.
+Native Java, Kotlin and Scala facades share the same JVM engine lineage.
+
+This notebook inspects and executes the committed Java sample on in-memory
+SQLite. It requires the Java 21 toolchain selected by `selecto-jvm/mise.toml`,
+`mise`, and the Gradle wrapper's dependencies. Set `SELECTO_JVM_PATH` if the
+native checkout is not a sibling of `selecto_livebooks`. Verified native source:
+`7fb922eb232097c73f3377e80761020a8abcfd7e`.
+
+## Inspect The Native Java Program
+
+```elixir
+repo = System.get_env("SELECTO_JVM_PATH") || Path.expand("../../selecto-jvm", __DIR__)
+source = Path.join(repo, "selecto-certification/src/main/java/io/selecto/certification/CommonNativeExample.java")
+IO.puts(File.read!(source))
+```
+
+The sample supplies a native domain map, previews SQL with separately bound
+parameters, inserts without `org_id`, and invokes the archive action through an
+inherited transaction engine. A separate callback inserts another row, then
+attempts a refused foreign-tenant delete; the earlier insert rolls back. The
+final scoped read contains only `[2, 8, "Test", "archived"]`.
+
+## Execute And Verify
+
+```elixir
+mise = System.find_executable("mise") || raise "mise executable is required"
+{output, status} = System.cmd(mise, ["exec", "--", "./gradlew", "--quiet", ":selecto-certification:commonNativeExample"], cd: repo, stderr_to_stdout: true)
+IO.puts(output)
+if status != 0 or not String.contains?(output, "PASS common native API:"), do: raise "Native JVM sample failed"
+```
+
+The actual SQLite insert preview contains four `?` placeholders with parameters
+`[2, "Test", "done", 8]`. The tenant stays in the SQL, even though assignments
+omit it. `filter`, `expectedCardinality`, `returning`, conflict identity and query
+enforcement retain native governance. Actions authorize afresh for preview and
+execution; a preview never grants execution authority.
+
+## Kotlin And Scala Calls
+
+The idiomatic bindings use native maps and their typed domains/adapters:
+
+```kotlin
+val engine = SelectoEngine.configure(domain, adapter).withTenant(8)
+engine.write().insert(mapOf("id" to 2, "name" to "Test"))
+    .returning("id", "name").execute()
+```
+
+```scala
+val engine = SelectoEngine.configure(domain, adapter).withTenant(8)
+engine.write().insert(Map("id" -> 2, "name" -> "Test"))
+  .returning("id", "name").execute()
+```
+
+Callbacks run synchronously and sequentially on the calling thread. Managed
+work commits on success and rolls back on escaping failure. Nested work uses
+native savepoints; host and external transactions keep their existing owner.
+Callback engines and drafts expire when the callback ends. Custom adapters
+without the transaction SPI explicitly refuse it.
+
+Run `mise exec -- ./gradlew check` in the native checkout for regression tests.
+The new Java storage scenarios run on SQLite and PostgreSQL; the latter needs a
+disposable `SELECTO_JVM_POSTGRESQL_TEST_URL` in JDBC form. Kotlin/Scala native
+binding tests execute their fluent calls on SQLite. This notebook does not claim
+live coverage of other providers or arbitrary host action executors.
