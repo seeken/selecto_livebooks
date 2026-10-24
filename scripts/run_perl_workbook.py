@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PIN = '1d2487440d477c836c4f8a394109d0007643b003'
+PIN = '80ca9a5188817818764532febd47482e96cbb701'
 
 
 def main():

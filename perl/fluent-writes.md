@@ -239,7 +239,7 @@ print JSON::PP->new->canonical()->utf8()->encode({backend => $backend, observati
 These observed results do not grant execution permission. Preview and execute
 authorize independently. Compound root handles require every key field in the
 projection and each exact read-key predicate; see the native
-[usage guide](https://github.com/seeken/selecto-perl/blob/062545f51efa8971a55cecfeea262519418b7f0f/docs/fluent-writes.md).
+[usage guide](https://github.com/seeken/selecto-perl/blob/80ca9a5188817818764532febd47482e96cbb701/docs/fluent-writes.md).
 Action-produced handles, row-bound action convenience, shared relationships,
 synchronization, compound bulk-action targets, multi-column relationship bindings,
 and editable adapters beyond PostgreSQL remain unsupported.
