@@ -153,9 +153,10 @@ Keep pagination limits and endpoint authorization in the host.
 
 ## 4) Reject malformed or broadened requests
 
-Prefix punctuation with no tokens returns an empty result. A caller-supplied
-scope is conjoined with the target's required scope; a conflicting tenant cannot
-replace it. Projection mistakes fail during planning.
+Prefix punctuation with no tokens returns an empty result. The `:scope` option
+is host scope, never request input: it is conjoined with the target's required
+scope, so a conflicting tenant cannot replace it. Projection mistakes fail
+during planning.
 
 ```elixir
 assert {:ok, %{results: []}} = Selecto.CoDomain.lookup(source, target, :carriers, "!!!")

@@ -81,6 +81,7 @@ PostgreSQL fixtures. Every setup uses the same pinned dependency snapshot.
 | [Co-domain lookups](livebooks/selecto_co_domains_workbook.livemd) | Scoped target views, prefix search, computed eligibility and NULL behavior |
 | [Updato feature tour](livebooks/selecto_updato_feature_tour.livemd) | Governed insert/update/upsert/delete, conformance and rollback |
 | [Nested writes](livebooks/selecto_updato_nested_writes_workbook.livemd) | Generated keys, owned-child synchronization and atomic graphs |
+| [Common native API](livebooks/selecto_common_native_api_workbook.livemd) | Engine-bound tenant on writes, actions, transactions and independent scopes |
 
 **Seeded PostgreSQL reference track** — run `mix setup` in a disposable database:
 
@@ -101,7 +102,7 @@ PostgreSQL fixtures. Every setup uses the same pinned dependency snapshot.
 | [VALUES lookups](livebooks/selecto_values_lookup_workbook.livemd) | Small inline lookup relations and plan inspection |
 | [Output formats and execution](livebooks/selecto_output_formats_execution_workbook.livemd) | Result shapes, exports, stream contracts and measurement caveats |
 
-All 33 notebooks receive syntax/integrity checks. The seeded execution gate also
+All 39 notebooks receive syntax/integrity checks. The seeded execution gate also
 runs all 14 reference notebooks and rejects known unexpected-error markers.
 Exploratory cells and intentionally printed negative cases are not exhaustive
 correctness proofs; the new workflows additionally assert concrete outcomes.
@@ -149,7 +150,7 @@ mise exec -- env SELECTO_ECOSYSTEM_USE_LOCAL=1 mix test
 ```
 
 Live gate: point it at an **existing disposable** PostgreSQL database. No sample
-migrations/seeds are required for these six workbooks:
+migrations/seeds are required for these seven workbooks:
 
 ```bash
 mise exec -- env SELECTO_ECOSYSTEM_USE_LOCAL=1 \
