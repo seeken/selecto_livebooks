@@ -142,6 +142,7 @@ domain = %{
   name: "Updato feature-tour items",
   source: %{
     source_table: items_table,
+    source_schema: "pg_temp",
     primary_key: :id,
     fields: [:id, :tenant_id, :account_id, :external_id, :name, :state],
     columns: %{
@@ -186,7 +187,7 @@ domain = %{
       foreign_keys: %{
         account_id: %{
           source: {:context, :account_id},
-          references: %{relation: accounts_table, field: :id},
+          references: %{relation: "pg_temp.#{accounts_table}", field: :id},
           required: true
         }
       }

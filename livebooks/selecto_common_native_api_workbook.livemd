@@ -15,7 +15,7 @@ Postgrex.query!(connection, "CREATE TEMP TABLE common_api_items(id integer PRIMA
 
 domain = %{
   name: "Common API items",
-  source: %{source_table: "common_api_items", primary_key: :id, tenant_field: :org_id,
+  source: %{source_table: "common_api_items", source_schema: "pg_temp", primary_key: :id, tenant_field: :org_id,
     fields: [:id, :org_id, :site_id, :name, :state], associations: %{},
     columns: %{id: %{type: :integer}, org_id: %{type: :integer}, site_id: %{type: :integer}, name: %{type: :string}, state: %{type: :string}}},
   schemas: %{}, joins: %{},

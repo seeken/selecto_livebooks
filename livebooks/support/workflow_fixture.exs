@@ -60,6 +60,7 @@ defmodule SelectoLivebooks.WorkflowFixture do
       name: "Workflow orders",
       source: %{
         source_table: "livebook_workflow_orders",
+        source_schema: "pg_temp",
         primary_key: :id,
         tenant_field: :tenant_id,
         fields: [:id, :tenant_id, :reference, :priority, :status, :visible],
