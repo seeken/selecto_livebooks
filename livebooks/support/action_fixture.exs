@@ -8,6 +8,7 @@ defmodule SelectoLivebooks.ActionFixture do
       name: "Approval queue",
       source: %{
         source_table: "livebook_approvals",
+        source_schema: "pg_temp",
         primary_key: :id,
         tenant_field: :tenant_id,
         fields: [:id, :tenant_id, :state, :ready, :reviewed_by_id, :note, :eligible],

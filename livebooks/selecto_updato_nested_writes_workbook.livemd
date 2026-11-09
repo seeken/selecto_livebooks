@@ -86,6 +86,7 @@ item_domain = %{
   name: "Nested order items",
   source: %{
     source_table: items_table,
+    source_schema: "pg_temp",
     primary_key: :id,
     fields: [:id, :tenant_id, :order_id, :sku, :quantity],
     columns: %{
@@ -123,6 +124,7 @@ order_domain = %{
   name: "Nested orders",
   source: %{
     source_table: orders_table,
+    source_schema: "pg_temp",
     primary_key: :id,
     fields: [:id, :tenant_id, :reference],
     columns: %{
