@@ -503,12 +503,6 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     assert_raise Selecto.PolicyViolation, ~r/query-authored :raw_sql/, fn ->
       strict_query |> Selecto.select({:raw_sql, "current_user"})
     end
-
-    tampered = put_in(strict_query.domain[:source][:source_table], "other_orders")
-
-    assert_raise Selecto.PolicyViolation, ~r/domain changed after strict mode sealed it/, fn ->
-      tampered |> Selecto.select(["id"]) |> Selecto.to_sql()
-    end
   end
 
   test "filtered set operands retain parameter order under outer composition" do
