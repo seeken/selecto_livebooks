@@ -188,8 +188,8 @@ new workflows check concrete results and negative cases, not just SQL text.
   `SELECTO_ECOSYSTEM_USE_LOCAL=0` to test standalone pinned dependencies;
   Git mode uses SSH and requires GitHub access.
 - Existing `SELECTO_LIVE_SELECTO_PATH`,
-  `SELECTO_LIVE_SELECTO_DB_POSTGRESQL_PATH`, `SELECTO_LIVE_SELECTO_UPDATO_PATH`,
-  and `SELECTO_LIVE_SELECTO_COMPONENTS_PATH` overrides remain supported.
+  `SELECTO_LIVE_SELECTO_DB_POSTGRESQL_PATH` and
+  `SELECTO_LIVE_SELECTO_COMPONENTS_PATH` overrides remain supported.
 - Core/strict/workflow examples use explicit `Selecto.Runtime.Context` values.
   The database fixtures use Postgrex directly; Ecto belongs only to the shared
   seeded sample app, not to the Selecto query-building requirement.

@@ -29,7 +29,6 @@ defmodule SelectoLivebooks.MixProject do
       {:postgrex, ">= 0.17.0"},
       selecto_dep(),
       selecto_db_postgresql_dep(),
-      selecto_updato_dep(),
       selecto_components_dep(),
       {:jason, "~> 1.4"},
       {:decimal, "~> 3.1 and >= 3.1.2"}
@@ -54,16 +53,6 @@ defmodule SelectoLivebooks.MixProject do
        @pins.selecto_db_postgresql[:git],
        @pins.selecto_db_postgresql[:ref]
      ) ++ [override: true]}
-  end
-
-  defp selecto_updato_dep do
-    {:selecto_updato,
-     dependency_source(
-       "SELECTO_LIVE_SELECTO_UPDATO_PATH",
-       "../selecto_updato",
-       @pins.selecto_updato[:git],
-       @pins.selecto_updato[:ref]
-     ) ++ [override: true, only: :test]}
   end
 
   defp selecto_components_dep do

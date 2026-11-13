@@ -5,7 +5,6 @@ defmodule SelectoLivebooksNotebookBootstrap do
   @workspace_root Path.expand("../../..", __DIR__)
   @selecto_root Path.join(@workspace_root, "selecto")
   @selecto_db_postgresql_root Path.join(@workspace_root, "selecto_db_postgresql")
-  @updato_root Path.join(@workspace_root, "selecto_updato")
   @components_root Path.join(@workspace_root, "selecto_components")
 
   @pins_file Path.join(__DIR__, "dependency_pins.exs")
@@ -43,7 +42,7 @@ defmodule SelectoLivebooksNotebookBootstrap do
   end
 
   def updato_deps do
-    [selecto_dep(), selecto_db_postgresql_dep(), updato_dep()]
+    [selecto_dep(), selecto_db_postgresql_dep()]
   end
 
   def core_deps do
@@ -64,7 +63,7 @@ defmodule SelectoLivebooksNotebookBootstrap do
 
     IO.puts("Using Selecto dependency: #{inspect(selecto_dep())}")
     IO.puts("Using Selecto DB PostgreSQL dependency: #{inspect(selecto_db_postgresql_dep())}")
-    IO.puts("Using SelectoUpdato dependency: #{inspect(updato_dep())}")
+    IO.puts("SelectoUpdato ships in the Selecto dependency.")
     IO.puts("Updato setup uses Postgrex directly; no Ecto repo configuration was installed.")
     :ok
   end
@@ -82,7 +81,7 @@ defmodule SelectoLivebooksNotebookBootstrap do
   end
 
   def verification_deps do
-    [selecto_dep(), selecto_db_postgresql_dep(), updato_dep(), components_dep()]
+    [selecto_dep(), selecto_db_postgresql_dep(), components_dep()]
   end
 
   def install_verification! do
@@ -91,7 +90,6 @@ defmodule SelectoLivebooksNotebookBootstrap do
     )
 
     IO.puts("Using Selecto dependency: #{inspect(selecto_dep())}")
-    IO.puts("Using SelectoUpdato dependency: #{inspect(updato_dep())}")
     IO.puts("Using SelectoComponents dependency: #{inspect(components_dep())}")
     :ok
   end
@@ -124,16 +122,6 @@ defmodule SelectoLivebooksNotebookBootstrap do
       @selecto_db_postgresql_root,
       @pins.selecto_db_postgresql[:git],
       @pins.selecto_db_postgresql[:ref]
-    )
-  end
-
-  def updato_dep do
-    source_dep(
-      :selecto_updato,
-      "SELECTO_LIVE_SELECTO_UPDATO_PATH",
-      @updato_root,
-      @pins.selecto_updato[:git],
-      @pins.selecto_updato[:ref]
     )
   end
 
