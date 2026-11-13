@@ -39,6 +39,8 @@ The fixture's runtime `tenant_required` flag is still classified as an unknown
 top-level schema section. Validation retains it for compatibility; an unknown
 section diagnostic does not necessarily mean runtime behavior is absent. The
 write-side tenant policy is declared separately under `writes.scope.tenant`.
+That is the schema 1 shape this fixture uses; section 6 shows schema 2, which
+declares tenancy once.
 
 ## 2) Declare consumer dependencies and application experiences
 
@@ -150,6 +152,73 @@ A changed hash detects changed content; it is not an authorization signature.
 The current release compatibility diff concentrates on relationship semantics,
 so it must not be treated as a general operation-version compatibility checker.
 Inspect the actual registries and the consuming application's contract too.
+
+## 6) Schema 2 documents, the domain fingerprint, and field descriptions
+
+Domain schema 2 (certification specification 3.0) declares tenancy once in a
+top-level `tenant`, lists a relation's fields as the keys of `columns` (with an
+optional `field_order`), and computes the domain fingerprint: the SHA-256 of
+the document's RFC 8785 serialization without `domain_fingerprint`. That
+computed value is the domain's identity, so a declared `domain_fingerprint` must
+match it. Schema 1 still validates but is deprecated. Only the number 2 is
+schema 2; any other document with a top-level `tenant` is refused rather than
+loaded without its tenant.
+
+Columns may carry an optional `description` (specification 3.1): 1 to 1000
+code points, line feeds allowed, no other control characters.
+`Selecto.Domain.field_description/2` reads it from an authored domain of either
+schema, or from a normalized one.
+
+```elixir
+schema_2 = %{
+  "schema_version" => 2,
+  "name" => "Approval notes",
+  "tenant" => %{"field" => "tenant_id"},
+  "source" => %{
+    "source_table" => "approval_notes",
+    "primary_key" => "id",
+    "columns" => %{
+      "id" => %{"type" => "integer"},
+      "tenant_id" => %{"type" => "integer"},
+      "note" => %{"type" => "string", "description" => "Reviewer's note, shown beside the approval."}
+    },
+    "field_order" => ["id", "tenant_id", "note"],
+    "associations" => %{}
+  },
+  "schemas" => %{},
+  "joins" => %{}
+}
+
+assert {:ok, normalized_v2, v2_diagnostics} = Selecto.Domain.validate(schema_2)
+assert v2_diagnostics.schema_version == 2
+fingerprint = Selecto.Domain.SchemaV2.fingerprint(schema_2)
+assert normalized_v2.domain_fingerprint == fingerprint
+# The validated form is the version 1 contract the rest of Selecto reads.
+assert normalized_v2.source["tenant_field"] == "tenant_id"
+assert normalized_v2.writes["scope"]["tenant"] == %{"field" => "tenant_id", "required" => true}
+
+assert Selecto.Domain.field_description(schema_2, "note") ==
+         "Reviewer's note, shown beside the approval."
+assert Selecto.Domain.field_description(schema_2, "id") == nil
+
+error_codes = fn document ->
+  {:error, diagnostics} = Selecto.Domain.validate(document)
+  Enum.map(diagnostics.errors, & &1.code)
+end
+
+wrong_fingerprint = Map.put(schema_2, "domain_fingerprint", String.duplicate("0", 64))
+assert :domain_fingerprint_mismatch in error_codes.(wrong_fingerprint)
+assert :unknown_domain_key in error_codes.(Map.put(schema_2, "schema_version", "2"))
+blank_description = put_in(schema_2, ["source", "columns", "note", "description"], "")
+assert :invalid_column_description in error_codes.(blank_description)
+
+%{fingerprint: fingerprint, field_order: normalized_v2.source["fields"]}
+```
+
+`Selecto.configure/3` still takes the authored runtime map used throughout these
+workbooks; validate a schema 2 document at the contract boundary. A description
+is metadata like any other field property: check that a field is public before
+showing its description to someone.
 
 Try [action planning](selecto_actions_workbook.livemd) for typed variants and
 capability decisions, then [co-domain lookups](selecto_co_domains_workbook.livemd)

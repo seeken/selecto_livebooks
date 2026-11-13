@@ -195,3 +195,18 @@ Missing policy is never permission. The notebook keeps all data in temporary
 tables and asserts the persisted state after rejection and rollback.
 Dependency source revisions and recorded certification profiles are separate;
 a notebook pass does not upgrade an adapter's central certificate.
+
+## November 12, 2026 refresh
+
+Strict mode no longer seals the configured domain (certification specification
+2.38.0). The strict-mode workbook's tamper cell had kept running but returned
+`:unexpectedly_allowed`; it now states what strict mode checks and what it does
+not, and every rejection cell asserts its outcome. The domain-contracts workbook
+adds a short schema 2 section: a top-level `tenant`, `columns` as the field
+list, the computed fingerprint as the domain's identity, and column
+descriptions read with `Selecto.Domain.field_description/2`. The other
+workbooks still author schema 1 runtime maps, which `Selecto.configure/3`
+consumes. The five native-runtime workbooks were re-executed against each
+runtime's current `main` and record those revisions. The Perl workbook
+produced identical observations at its pin and at the current selecto-perl
+`main`, so its pin is unchanged.

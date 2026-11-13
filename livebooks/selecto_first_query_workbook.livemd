@@ -150,7 +150,7 @@ assert {:ok, {"id", :desc}} = Map.fetch(allowed_sorts, "newest")
 assert :error = Map.fetch(allowed_sorts, "id; DROP TABLE orders")
 ```
 
-No arbitrary field name becomes an atom or SQL fragment. For a sealed query
+No arbitrary field name becomes an atom or SQL fragment. For a governed query
 boundary, continue with [strict mode](selecto_strict_mode_workbook.livemd).
 For a real database-backed application flow, next try
 [pagination](selecto_pagination_workbook.livemd) and

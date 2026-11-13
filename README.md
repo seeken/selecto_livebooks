@@ -64,9 +64,9 @@ PostgreSQL fixtures. Every setup uses the same pinned dependency snapshot.
 | [Interactive action forms](livebooks/selecto_action_form_workbook.livemd) | Components modal messages and host preview/apply lifecycle |
 | [Authorization lifecycle](livebooks/selecto_action_authorization_lifecycle_workbook.livemd) | Grant binding, replay rejection, and expiry |
 | [Action observability](livebooks/selecto_action_observability_workbook.livemd) | Audit envelopes, denial/failure separation, committed outcomes |
-| [New domain contracts](livebooks/selecto_domain_contracts_workbook.livemd) | Colocated policy, diagnostics, consumer registries, and release fingerprints |
+| [New domain contracts](livebooks/selecto_domain_contracts_workbook.livemd) | Colocated policy, diagnostics, consumer registries, release fingerprints, schema 2 and field descriptions |
 | [Nested domain evolution](livebooks/selecto_domain_evolution_workbook.livemd) | Projection snapshots and relationship compatibility diffs |
-| [Strict mode](livebooks/selecto_strict_mode_workbook.livemd) | Sealed domains and caller-authored SQL rejection |
+| [Strict mode](livebooks/selecto_strict_mode_workbook.livemd) | Governed joins, caller-authored SQL rejection, and what strict mode does not check |
 | [Domain extensions](livebooks/selecto_domain_extensions_workbook.livemd) | View DDL compilation, explicit adapters, overlays and drift checks |
 | [Components analytics](livebooks/selecto_components_analytics_workbook.livemd) | Shared Aggregate/Graph state, defaults and URL preservation |
 | [Bounded verification](livebooks/selecto_verification_workbook.livemd) | Named finite safety models and their proof limits |
