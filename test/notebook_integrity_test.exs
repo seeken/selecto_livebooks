@@ -29,37 +29,13 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
     refute Keyword.has_key?(Mix.Project.config()[:aliases], :test)
   end
 
-  test "bootstrap resolves sibling SelectoUpdato checkout when present" do
-    bootstrap_path = Path.join(@livebook_dir, "support/bootstrap.exs")
-    Code.require_file(bootstrap_path)
-
-    updato_root = Path.expand("../selecto_updato", @repo_root)
-
-    if File.dir?(updato_root) do
-      with_env(
-        %{
-          "SELECTO_ECOSYSTEM_USE_LOCAL" => "1",
-          "SELECTO_LIVE_SELECTO_UPDATO_PATH" => nil
-        },
-        fn ->
-          assert {:selecto_updato, [path: ^updato_root, override: true]} =
-                   apply(SelectoLivebooksNotebookBootstrap, :updato_dep, [])
-        end
-      )
-    end
-  end
-
-  test "Updato bootstrap is Ecto-free and includes the three portable write packages" do
+  test "Updato bootstrap is Ecto-free and includes the two portable write packages" do
     bootstrap_path = Path.join(@livebook_dir, "support/bootstrap.exs")
     Code.require_file(bootstrap_path)
 
     deps = apply(SelectoLivebooksNotebookBootstrap, :updato_deps, [])
 
-    assert Enum.map(deps, &elem(&1, 0)) == [
-             :selecto,
-             :selecto_db_postgresql,
-             :selecto_updato
-           ]
+    assert Enum.map(deps, &elem(&1, 0)) == [:selecto, :selecto_db_postgresql]
 
     refute Enum.any?(deps, &(elem(&1, 0) in [:ecto, :ecto_sql, :selecto_livebooks]))
 
@@ -255,7 +231,6 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
         "SELECTO_ECOSYSTEM_USE_LOCAL" => "0",
         "SELECTO_LIVE_SELECTO_PATH" => nil,
         "SELECTO_LIVE_SELECTO_DB_POSTGRESQL_PATH" => nil,
-        "SELECTO_LIVE_SELECTO_UPDATO_PATH" => nil,
         "SELECTO_LIVE_SELECTO_COMPONENTS_PATH" => nil
       },
       fn ->
@@ -265,7 +240,6 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
         for {app, function} <- [
               selecto: :selecto_dep,
               selecto_db_postgresql: :selecto_db_postgresql_dep,
-              selecto_updato: :updato_dep,
               selecto_components: :components_dep
             ] do
           assert {^app, options} = apply(SelectoLivebooksNotebookBootstrap, function, [])
@@ -583,7 +557,6 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
            |> Enum.map(&elem(&1, 0)) == [
              :selecto,
              :selecto_db_postgresql,
-             :selecto_updato,
              :selecto_components
            ]
   end
