@@ -10,7 +10,7 @@ This notebook inspects and executes the committed Java sample on in-memory
 SQLite. It requires the Java 21 toolchain selected by `selecto-jvm/mise.toml`,
 `mise`, and the Gradle wrapper's dependencies. Set `SELECTO_JVM_PATH` if the
 native checkout is not a sibling of `selecto_livebooks`. Verified native source:
-`319dea819a596c55fd1d9e410ad0d1eb30475901`.
+`f6bd19dc1fd82a52b3b775fddfa1e5eed8600665`.
 
 ## Inspect The Native Java Program
 
