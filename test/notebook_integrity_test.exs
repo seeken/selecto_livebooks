@@ -652,11 +652,18 @@ defmodule SelectoLivebooks.NotebookIntegrityTest do
 
     updato = File.read!(Path.join(@livebook_dir, "selecto_updato_feature_tour.livemd"))
 
+    contracts =
+      File.read!(Path.join(@livebook_dir, "selecto_domain_contracts_workbook.livemd"))
+
     nested =
       File.read!(Path.join(@livebook_dir, "selecto_updato_nested_writes_workbook.livemd"))
 
     assert strict =~ "mode: :strict"
     assert strict =~ "domain_sql: :forbid"
+    refute strict =~ "sealed"
+    refute strict =~ "seal_rejection"
+    assert contracts =~ "\"schema_version\" => 2"
+    assert contracts =~ "Selecto.Domain.field_description"
     assert verification =~ "Selecto.Verification.QuerySafety.verify()"
     assert verification =~ "SelectoComponents.Verification.ActionVisibility.verify()"
     assert analytics =~ "SelectoComponents.Views.Analytic.Defaults"

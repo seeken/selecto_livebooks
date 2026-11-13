@@ -9,7 +9,7 @@ This notebook runs the committed C# sample against an in-memory SQLite database.
 It requires the .NET SDK selected by `selecto-dotnet/global.json` and `mise` on
 PATH. It creates no persistent database. Set `SELECTO_DOTNET_PATH` when the native
 checkout is not a sibling of `selecto_livebooks`. The verified native revision is
-`f312f91` (see the native migration audit for the full source snapshot).
+`ec30bd75ca6ac5555a36ce8df3546f43d5ff65fa`.
 
 ## Inspect the native C# program
 

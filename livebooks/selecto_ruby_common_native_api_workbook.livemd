@@ -8,7 +8,7 @@ while reads, actions and transaction callbacks inherit it.
 This notebook inspects and executes the native Ruby program on in-memory SQLite.
 It requires `mise`, the Ruby version selected by `selecto-rails/mise.toml` and the
 native repository's installed bundle. Set `SELECTO_RUBY_PATH` if that checkout is
-not a sibling of `selecto_livebooks`. Verified native source: `b41d2800e8675b28c6d851d5781b6267f3445fb7`.
+not a sibling of `selecto_livebooks`. Verified native source: `8543a4e3945beb7b8eccb69ff77e1951d7295e8c`.
 
 ## Inspect The Native Ruby Program
 

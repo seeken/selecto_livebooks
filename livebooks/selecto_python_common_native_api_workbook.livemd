@@ -7,7 +7,7 @@ tenant. Reads, fluent writes, actions and callback engines inherit the binding.
 This notebook inspects and executes the complete native program on in-memory
 SQLite. Install the native repository's pinned development environment first.
 Set `SELECTO_PYTHON_PATH` if the checkout is not a sibling of
-`selecto_livebooks`. Verified native source: `e78c7cddb81e470854ceb8ba89c88cca3ef12455`.
+`selecto_livebooks`. Verified native source: `a4d9ec9bbf13d3d9dffdff53fd9445e380e2255c`.
 
 ## Inspect The Native Program
 

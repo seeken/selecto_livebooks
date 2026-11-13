@@ -1,6 +1,6 @@
 # Selecto Strict Mode Workbook
 
-This workbook exercises the sealed query boundary added in Selecto 0.4.10.
+This workbook exercises the governed query boundary added in Selecto 0.4.10.
 It needs no database: every example uses an explicit compile-only runtime.
 
 ## Setup
@@ -8,6 +8,7 @@ It needs no database: every example uses an explicit compile-only runtime.
 ```elixir
 Code.require_file(Path.expand("support/bootstrap.exs", __DIR__))
 SelectoLivebooksNotebookBootstrap.install_core!()
+import ExUnit.Assertions
 ```
 
 ## 1) Compose and validate the trusted domain
@@ -53,12 +54,12 @@ strict_domain = %{
 }
 
 strict_query = Selecto.configure(strict_domain, Selecto.Runtime.Context.new(SelectoDBPostgreSQL.Adapter, :compile_only), mode: :strict)
-Selecto.Policy.strict?(strict_query)
+assert Selecto.Policy.strict?(strict_query)
 ```
 
 ## 2) Compile an ordinary governed query
 
-The join and custom column came from the sealed domain. The filter value stays
+The join and custom column came from the configured domain. The filter value stays
 in the parameter list.
 
 ```elixir
@@ -89,6 +90,7 @@ raw_sql_rejection =
     error in Selecto.PolicyViolation -> Exception.message(error)
   end
 
+assert raw_sql_rejection =~ "query-authored :raw_sql"
 raw_sql_rejection
 ```
 
@@ -120,30 +122,32 @@ undeclared_join_rejection =
     error in Selecto.PolicyViolation -> Exception.message(error)
   end
 
+assert undeclared_join_rejection =~ "not declared by the domain"
+refute join_override_rejection == :unexpectedly_allowed
 %{override: join_override_rejection, undeclared: undeclared_join_rejection}
 ```
 
-## 5) Observe seal checks at the compiler boundary
+## 5) Know what strict mode checks: the query, not the host's configuration
 
-Even direct structure mutation cannot silently change the sealed source.
+Strict mode governs what a query caller adds. It no longer fingerprints the
+configured domain and compares it on every compile (certification
+specification 2.38.0 removed that seal). Compilation reads the configuration
+`Selecto.configure/3` built, so the edit below neither changes the generated SQL
+nor raises. To change a domain, configure it again, where validation and the
+`domain_sql` profile run. The query struct is host data; do not hand it to
+untrusted code.
 
 ```elixir
-tampered_query = put_in(strict_query.domain[:source][:source_table], "other_orders")
-
-seal_rejection =
-  try do
-    tampered_query |> Selecto.select(["id"]) |> Selecto.to_sql()
-    :unexpectedly_allowed
-  rescue
-    error in Selecto.PolicyViolation -> Exception.message(error)
-  end
-
-seal_rejection
+edited_query = put_in(strict_query.domain[:source][:source_table], "other_orders")
+{edited_sql, []} = edited_query |> Selecto.select(["id"]) |> Selecto.to_sql()
+assert edited_sql =~ "from orders selecto_root"
+refute edited_sql =~ "other_orders"
+edited_sql
 ```
 
 ## 6) Choose the domain-SQL profile deliberately
 
-The default `domain_sql: :declared` permits trusted SQL already in the sealed
+The default `domain_sql: :declared` permits trusted SQL already in the configured
 domain. `domain_sql: :forbid` rejects SQL-bearing domain entries during
 configuration.
 
@@ -160,6 +164,7 @@ forbid_domain_sql_rejection =
     error in Selecto.PolicyViolation -> Exception.message(error)
   end
 
+assert forbid_domain_sql_rejection =~ "domain_sql: :forbid"
 forbid_domain_sql_rejection
 ```
 
