@@ -2,15 +2,15 @@
 %{
   selecto: [
     git: "git@github.com:seeken/selecto.git",
-    ref: "4527a0f434f361597509d7e4cfd340d7b730514a"
+    ref: "2ba0d4fd62756686394c1f1f04a43cfbb233f03e"
   ],
   selecto_db_postgresql: [
     git: "git@github.com:seeken/selecto_db_postgresql.git",
-    ref: "7eae0260462b3541377874ecc68917aac4b0cde7"
+    ref: "54dfd62f632be1eb5d1d40aef5ff582c8d972e2f"
   ],
   selecto_updato: [
     git: "git@github.com:seeken/selecto_updato.git",
-    ref: "ecd9376860eb3369bd7b13f27c4d6c8596741c95"
+    ref: "bbb88f45a5175601eb821106a3cc03fc8c7bb5df"
   ],
   selecto_components: [
     git: "git@github.com:seeken/selecto_components.git",
