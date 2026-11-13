@@ -210,3 +210,14 @@ consumes. The five native-runtime workbooks were re-executed against each
 runtime's current `main` and record those revisions. The Perl workbook
 produced identical observations at its pin and at the current selecto-perl
 `main`, so its pin is unchanged.
+
+Follow-up the same day: the Perl workbook now authors its domain as schema 2
+(a top-level `tenant` with `satisfied_by`, `columns` as the field list, the
+action's capability implied) and pins selecto-perl `edcfb3f`, a `main` that
+parses schema 2. Its setup cell asserts the domain is schema 2 and not
+deprecated, and records the computed fingerprint. The domain nested in the
+`notes` write relationship stays in schema 1 form, built from the same schema 2
+declaration with `Selecto::Domain::SchemaV2->to_version_1`: selecto-perl reads a
+nested relationship domain only in that form and refuses a schema 2 one with
+`write_policy_missing`. On SQLite and PostgreSQL every observation other than
+the setup record is identical to the previous pin's.
