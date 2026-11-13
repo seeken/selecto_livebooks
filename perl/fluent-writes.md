@@ -21,14 +21,9 @@ is the public write authority (`satisfied_by` names the trusted host context). A
 relation's `columns` are its field list; there is no `fields` list or
 `source.tenant_field`. The action's capability entry is implied by the action, so
 it is not restated, and the domain's identity is the fingerprint computed from
-the document (RFC 8785 + SHA-256), not a declared label. A schema 1 domain still
-parses, deprecated.
-
-One exception: the domain nested in a write relationship (`notes` below) is
-still read in its schema 1 form, which a nested write refuses without
-(`write_policy_missing`). The cell builds it from the same schema 2 declaration
-with `Selecto::Domain::SchemaV2->to_version_1`, the mapping the parser itself
-applies to a top-level schema 2 document.
+the document (RFC 8785 + SHA-256), not a declared label. The domain nested in
+the `notes` write relationship is a schema 2 document too: its own `tenant` is
+the child's write authority. A schema 1 domain still parses, deprecated.
 
 ```perl
 use 5.034;
@@ -39,7 +34,6 @@ use DBI ();
 use JSON::PP ();
 use Storable qw(dclone);
 use Selecto;
-use Selecto::Domain::SchemaV2 ();
 
 my @observations;
 sub record { my ($id, %values) = @_; push @observations, dclone({id => $id, %values}) }
@@ -89,7 +83,7 @@ $contract->{writes}{relationships}{notes} = {
     writable => JSON::PP::true, ownership => 'owned', cardinality => 'many',
     allowed_ops => ['insert'], child_key => 'item_id', identity_fields => ['id'],
     write => {modes => ['append_only'], create => JSON::PP::true},
-    domain => Selecto::Domain::SchemaV2->to_version_1(relation_contract('helper_notes', qw(id tenant_id item_id name))),
+    domain => relation_contract('helper_notes', qw(id tenant_id item_id name)),
 };
 $contract->{actions}{archive} = {
     type => 'transition', scope => 'row', capability => 'items.archive',
