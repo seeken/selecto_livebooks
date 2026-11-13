@@ -15,6 +15,21 @@ workbook digest. This is a teaching run, not a new certification profile.
 The application owns the domain and authenticates tenant 8. The helper binds a
 configured engine; it does not turn a client tenant value into authority.
 
+The domain is a schema 2 document (certification specification 3.0). Tenancy is
+declared once, in the top-level `tenant`: it scopes reads by the engine tenant and
+is the public write authority (`satisfied_by` names the trusted host context). A
+relation's `columns` are its field list; there is no `fields` list or
+`source.tenant_field`. The action's capability entry is implied by the action, so
+it is not restated, and the domain's identity is the fingerprint computed from
+the document (RFC 8785 + SHA-256), not a declared label. A schema 1 domain still
+parses, deprecated.
+
+One exception: the domain nested in a write relationship (`notes` below) is
+still read in its schema 1 form, which a nested write refuses without
+(`write_policy_missing`). The cell builds it from the same schema 2 declaration
+with `Selecto::Domain::SchemaV2->to_version_1`, the mapping the parser itself
+applies to a top-level schema 2 document.
+
 ```perl
 use 5.034;
 use strict;
@@ -24,6 +39,7 @@ use DBI ();
 use JSON::PP ();
 use Storable qw(dclone);
 use Selecto;
+use Selecto::Domain::SchemaV2 ();
 
 my @observations;
 sub record { my ($id, %values) = @_; push @observations, dclone({id => $id, %values}) }
@@ -52,9 +68,10 @@ $dbh->do("CREATE TEMP TABLE helper_notes(id $identity_sql, tenant_id INTEGER NOT
 sub relation_contract {
     my ($table, @fields) = @_;
     return {
+        schema_version => 2,
         name => $table,
-        source => {source_table => $table, primary_key => 'id', tenant_field => 'tenant_id',
-            fields => \@fields, associations => {}, columns => {map {
+        tenant => {field => 'tenant_id', satisfied_by => ['trusted_context']},
+        source => {source_table => $table, primary_key => 'id', associations => {}, columns => {map {
                 $_ => {type => /\A(?:id|tenant_id|item_id)\z/ ? 'integer' : 'string'}
             } @fields}},
         schemas => {}, joins => {},
@@ -63,8 +80,6 @@ sub relation_contract {
             fields => {map { $_ => {insertable => JSON::PP::true, updatable => JSON::PP::true,
                 ($_ eq 'tenant_id' ? (immutable => JSON::PP::true, required_on => ['insert']) : ())} }
                 grep { $_ ne 'id' } @fields},
-            scope => {tenant => {field => 'tenant_id', required => JSON::PP::true,
-                satisfied_by => ['trusted_context']}},
         },
     };
 }
@@ -74,7 +89,7 @@ $contract->{writes}{relationships}{notes} = {
     writable => JSON::PP::true, ownership => 'owned', cardinality => 'many',
     allowed_ops => ['insert'], child_key => 'item_id', identity_fields => ['id'],
     write => {modes => ['append_only'], create => JSON::PP::true},
-    domain => relation_contract('helper_notes', qw(id tenant_id item_id name)),
+    domain => Selecto::Domain::SchemaV2->to_version_1(relation_contract('helper_notes', qw(id tenant_id item_id name))),
 };
 $contract->{actions}{archive} = {
     type => 'transition', scope => 'row', capability => 'items.archive',
@@ -83,11 +98,13 @@ $contract->{actions}{archive} = {
     execution => {kind => 'updato', operation => 'update',
         set => {state => 'archived', archive_reason => ['input', 'reason']}},
 };
-$contract->{capabilities}{'items.archive'} = {operations => ['action', 'update'], action => 'archive'};
 my $domain = Selecto::Domain->parse($contract);
+check($domain->schema_version == 2 && !@{$domain->schema_diagnostics}, 'schema 2 domain, not deprecated');
+check($domain->tenant_field eq 'tenant_id', 'the top-level tenant scopes the engine');
 my $adapter = Selecto->adapter($backend => (dbh => $dbh));
 my $engine = Selecto::Engine->new(domain => $domain, adapter => $adapter)->with_tenant(8);
-record('setup', backend => $backend, domain => $contract);
+record('setup', backend => $backend, domain => $contract, schema_version => $domain->schema_version,
+    fingerprint => $domain->fingerprint);
 ```
 
 ## returning — Insert without repeating the tenant assignment
@@ -239,7 +256,7 @@ print JSON::PP->new->canonical()->utf8()->encode({backend => $backend, observati
 These observed results do not grant execution permission. Preview and execute
 authorize independently. Compound root handles require every key field in the
 projection and each exact read-key predicate; see the native
-[usage guide](https://github.com/seeken/selecto-perl/blob/80ca9a5188817818764532febd47482e96cbb701/docs/fluent-writes.md).
+[usage guide](https://github.com/seeken/selecto-perl/blob/edcfb3fe54f9a23778b18fbd0d4afe4aed1ca7e5/docs/fluent-writes.md).
 Action-produced handles, row-bound action convenience, shared relationships,
 synchronization, compound bulk-action targets, multi-column relationship bindings,
 and editable adapters beyond PostgreSQL remain unsupported.
