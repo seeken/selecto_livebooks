@@ -216,12 +216,12 @@ Follow-up the same day: the Perl workbook now authors its domain as schema 2
 action's capability implied). Its setup cell asserts the domain is schema 2 and
 not deprecated, and records the computed fingerprint. The domain nested in the
 `notes` write relationship is schema 2 as well. selecto-perl `main` up to
-`1f55c9b` reads a nested relationship domain only in schema 1 form and refuses
+`beffd8c` reads a nested relationship domain only in schema 1 form and refuses
 a schema 2 one with `write_policy_missing`; the selecto-perl change that loads
 nested schema 2 domains is not yet on `main`. **This workbook needs the next
-selecto-perl pin:** the runner still pins `1f55c9b`, where the PostgreSQL run
+selecto-perl pin:** the runner still pins `beffd8c`, where the PostgreSQL run
 fails at the nested write; bump `PIN` in `scripts/run_perl_workbook.py` (and the
 usage-guide link) to the selecto-perl commit that carries that change once it is
 pushed. Verified against that change with `SELECTO_NOTEBOOK_ALLOW_LOCAL=1` on
 SQLite and PostgreSQL: every observation other than the setup record is
-identical to the previous pin's (`1f55c9b`).
+identical to the previous pin's (`beffd8c`).
