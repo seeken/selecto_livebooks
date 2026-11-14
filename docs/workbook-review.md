@@ -223,7 +223,7 @@ cascades moved `PIN` and the usage-guide link past it.
 
 ## November 14, 2026 refresh
 
-The Perl workbook's `PIN` and usage-guide link are selecto-perl `beffd8c`, the
+The Perl workbook's `PIN` and usage-guide link are selecto-perl `c1e07dc`, the
 current `main`; it carries `c23ec55`, so the schema 2 nested write runs. The
 workbook passes at that pin on in-memory SQLite and on PostgreSQL temporary
 tables (a RAM-backed server), with no `SELECTO_NOTEBOOK_ALLOW_LOCAL` override.
