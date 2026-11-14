@@ -103,6 +103,11 @@ record('setup', backend => $backend, domain => $contract, schema_version => $dom
 
 ## returning — Insert without repeating the tenant assignment
 
+`$engine->write()` is thin sugar over the portable write intent, Perl's one
+public write model: it compiles to the same intent `$engine->write_command(...)`
+builds (and `Selecto::Write::Operation` builds for nested and cross-table
+writes), which the engine then checks and executes.
+
 Separate setters and chained calls use the same draft. `preview` exposes actual
 native SQL and parameters, performs no target DML, and does not consume the draft.
 `returning` returns ordinary values; it does not issue an editable row handle.

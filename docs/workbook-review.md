@@ -215,13 +215,25 @@ Follow-up the same day: the Perl workbook now authors its domain as schema 2
 (a top-level `tenant` with `satisfied_by`, `columns` as the field list, the
 action's capability implied). Its setup cell asserts the domain is schema 2 and
 not deprecated, and records the computed fingerprint. The domain nested in the
-`notes` write relationship is schema 2 as well. selecto-perl `main` up to
-`beffd8c` reads a nested relationship domain only in schema 1 form and refuses
-a schema 2 one with `write_policy_missing`; the selecto-perl change that loads
-nested schema 2 domains is not yet on `main`. **This workbook needs the next
-selecto-perl pin:** the runner still pins `beffd8c`, where the PostgreSQL run
-fails at the nested write; bump `PIN` in `scripts/run_perl_workbook.py` (and the
-usage-guide link) to the selecto-perl commit that carries that change once it is
-pushed. Verified against that change with `SELECTO_NOTEBOOK_ALLOW_LOCAL=1` on
-SQLite and PostgreSQL: every observation other than the setup record is
-identical to the previous pin's (`beffd8c`).
+`notes` write relationship is schema 2 as well. At the time selecto-perl
+`main` (`edcfb3f`) read a nested relationship domain only in schema 1 form and
+refused a schema 2 one with `write_policy_missing`; selecto-perl `c23ec55`
+("Nested write-relationship domains may be schema 2") fixed that, and later pin
+cascades moved `PIN` and the usage-guide link past it.
+
+## November 14, 2026 refresh
+
+The Perl workbook's `PIN` and usage-guide link are selecto-perl `beffd8c`, the
+current `main`; it carries `c23ec55`, so the schema 2 nested write runs. The
+workbook passes at that pin on in-memory SQLite and on PostgreSQL temporary
+tables (a RAM-backed server), with no `SELECTO_NOTEBOOK_ALLOW_LOCAL` override.
+Its returning section now says the fluent builder compiles to the portable
+write intent, Perl's one public write model.
+
+The reusable-queries workbook notes the API rule for segments over withheld
+fields (certification specification 3.2, AQ006). The Elixir workbooks run on
+`selecto` cdf1c35 and `selecto_db_postgresql` d0b1745, where Updato ships in
+`selecto` and the PostgreSQL adapter's generated-SQL guards are gone; no
+workbook depended on either. The temporary-table fixtures still resolve
+through the session's `search_path`, which searches the temporary schema
+first.

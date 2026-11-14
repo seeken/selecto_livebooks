@@ -161,6 +161,15 @@ assert 3 in restored_params
 assert true in restored_params
 ```
 
+When a request like this reaches a canonical API host (`selecto_api`), named
+segments are the one place it may reach a field the caller cannot see. A
+segment may filter on an internal, hidden, or redacted field with the values
+its definition fixes, because those filters are the domain's own. A segment
+that compares such a field with a request parameter is refused with
+`hidden_field`, since the parameter could probe the value (certification
+specification 3.2, AQ006). The request's own filters on that field are refused
+as always.
+
 Extend this with tenant context supplied by the host, not saved form input:
 [tenant-scoped reads](selecto_tenant_reads_workbook.livemd). For nested reusable
 projections, combine the query library with
