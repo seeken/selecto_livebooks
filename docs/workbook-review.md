@@ -223,7 +223,7 @@ cascades moved `PIN` and the usage-guide link past it.
 
 ## November 14, 2026 refresh
 
-The Perl workbook's `PIN` and usage-guide link are selecto-perl `c1e07dc`, the
+The Perl workbook's `PIN` and usage-guide link are selecto-perl `00ab086`, the
 current `main`; it carries `c23ec55`, so the schema 2 nested write runs. The
 workbook passes at that pin on in-memory SQLite and on PostgreSQL temporary
 tables (a RAM-backed server), with no `SELECTO_NOTEBOOK_ALLOW_LOCAL` override.
@@ -232,7 +232,7 @@ write intent, Perl's one public write model.
 
 The reusable-queries workbook notes the API rule for segments over withheld
 fields (certification specification 3.2, AQ006). The Elixir workbooks run on
-`selecto` cdf1c35 and `selecto_db_postgresql` d0b1745, where Updato ships in
+`selecto` cdf1c35 and `selecto_db_postgresql` d7bac4b, where Updato ships in
 `selecto` and the PostgreSQL adapter's generated-SQL guards are gone; no
 workbook depended on either. The temporary-table fixtures still resolve
 through the session's `search_path`, which searches the temporary schema
