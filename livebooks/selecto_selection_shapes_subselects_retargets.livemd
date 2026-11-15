@@ -140,8 +140,10 @@ end)
 
 ## 1.1) Composable Selection with Multiple `select/2` Calls
 
-`select/2` is composable: you can add fields in stages as requirements evolve.
-This cell builds one query in multiple steps, then executes it.
+`select/2` appends fields in order, including duplicates. This cell builds one
+query in multiple steps, then executes it with two output positions for `status`.
+Use `replace_select/2` for a complete replacement and `clear_select/1` to return
+to the configured default selection. These operations preserve domain policy.
 
 ```elixir
 base_query =
@@ -166,19 +168,25 @@ composable_select_query =
   |> Selecto.select([
     "customer.name",
     {:row, ["shipping_city", "shipping_country"], "ship_to"},
-    # Re-selecting "status" demonstrates deduping in set.selected
+    # Re-selecting "status" preserves a second output position.
     "status"
   ])
 
-IO.inspect(composable_select_query.set.selected, label: "Final selected fields (deduped)")
+IO.inspect(composable_select_query.set.selected, label: "Final selected fields (ordered duplicates)")
+
+unless Enum.count(composable_select_query.set.selected, &(&1 == "status")) == 2 do
+  raise "composable selection must preserve both status positions"
+end
 
 {:ok, {rows, _columns, _aliases}} =
   SelectionFocus.Helpers.run("Composable select query", composable_select_query)
 
-Enum.each(rows, fn [order_number, status, total, customer_name, ship_to] ->
+Enum.each(rows, fn [order_number, status, total, customer_name, ship_to, repeated_status] ->
+  unless repeated_status == status, do: raise("repeated status output differs")
+
   IO.puts(
     "order=#{order_number} status=#{status} total=#{inspect(total)} customer=#{customer_name} " <>
-      "ship_to=#{inspect(ship_to)}"
+      "ship_to=#{inspect(ship_to)} repeated_status=#{repeated_status}"
   )
 end)
 
