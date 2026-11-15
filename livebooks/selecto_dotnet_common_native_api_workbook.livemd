@@ -9,7 +9,9 @@ This notebook runs the committed C# sample against an in-memory SQLite database.
 It requires the .NET SDK selected by `selecto-dotnet/global.json` and `mise` on
 PATH. It creates no persistent database. Set `SELECTO_DOTNET_PATH` when the native
 checkout is not a sibling of `selecto_livebooks`. The verified native revision is
-`53cd683120b401a3c28a2409b595a663cd03fd53`.
+`7db89ec9fd61c8f36fc71df0f590f2c01845c3cb`.
+
+`Where` combines successive filters with AND. `Select` appends in order, including duplicates. Use `ReplaceWhere`/`ClearWhere` and `ReplaceSelections`/`ClearSelections` for explicit resets. Clearing selections restores the unselected state; select fields again before executing.
 
 ## Inspect the native C# program
 

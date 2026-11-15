@@ -10,7 +10,9 @@ This notebook inspects and executes the committed Java sample on in-memory
 SQLite. It requires the Java 21 toolchain selected by `selecto-jvm/mise.toml`,
 `mise`, and the Gradle wrapper's dependencies. Set `SELECTO_JVM_PATH` if the
 native checkout is not a sibling of `selecto_livebooks`. Verified native source:
-`c2e9c30eb92d6aab4084d0a6431ad1636cdcd0c0`.
+`454c2f23f0936ad384052c4b002da7f35994763e`.
+
+Java, Kotlin and Scala `where` calls combine successive filters with AND; `select` appends in order, including duplicates. Use `replaceWhere`/`clearWhere` and `replaceSelections`/`clearSelections` for explicit resets. Clearing selections restores the unselected state; select fields again before executing.
 
 ## Inspect The Native Java Program
 
