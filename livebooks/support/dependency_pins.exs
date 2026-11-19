@@ -10,6 +10,6 @@
   ],
   selecto_components: [
     git: "git@github.com:seeken/selecto_components.git",
-    ref: "2a6f69d11f0af65f21000be0936036fade2581b1"
+    ref: "0833378aff9a489154ca1cecdd89e1905ec76cd4"
   ]
 }
