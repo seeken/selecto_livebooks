@@ -100,7 +100,7 @@ PostgreSQL fixtures. Every setup uses the same pinned dependency snapshot.
 | [Arrays, UNNEST, LATERAL](livebooks/selecto_array_unnest_lateral_workbook.livemd) | Collection expansion and preserving unmatched parents |
 | [CASE expressions](livebooks/selecto_case_expressions_workbook.livemd) | Business buckets, nullable values and conditional priority |
 | [VALUES lookups](livebooks/selecto_values_lookup_workbook.livemd) | Small inline lookup relations and plan inspection |
-| [Output formats and execution](livebooks/selecto_output_formats_execution_workbook.livemd) | Result shapes, exports, stream contracts and measurement caveats |
+| [Output formats and execution](livebooks/selecto_output_formats_execution_workbook.livemd) | Result shapes, exports, stream contracts, read deadlines and measurement caveats |
 
 All 39 notebooks receive syntax/integrity checks. The seeded execution gate also
 runs all 14 reference notebooks and rejects known unexpected-error markers.

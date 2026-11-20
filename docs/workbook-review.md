@@ -237,3 +237,36 @@ fields (certification specification 3.2, AQ006). The Elixir workbooks run on
 workbook depended on either. The temporary-table fixtures still resolve
 through the session's `search_path`, which searches the temporary schema
 first.
+
+## November 20, 2026 refresh
+
+The Elixir workbooks are pinned to `selecto` a882e72 and
+`selecto_db_postgresql` 382a911; `selecto_components` stays at 0833378, its
+current `main`. All three gates (default, isolated PostgreSQL fixtures, seeded
+reference) pass with sibling checkouts at those revisions and with the Git pins,
+against a RAM-backed PostgreSQL server.
+
+The PostgreSQL adapter changed how reads run on 2026-11-20: a generated read
+with no `timeout:` is one autocommit statement, neither `READ ONLY` nor under a
+server `statement_timeout`, and a `timeout:` makes the read a short `READ ONLY`
+transaction with a transaction-local server deadline. No workbook depended on
+the earlier shape. The output formats and execution workbook gains section 10,
+which asserts that a read with a deadline leaves the session's
+`statement_timeout` unchanged, and that a one-second host fragment on a
+one-connection Postgrex pool ends at a 200 ms deadline with a `:timeout_error`
+while the same backend connection serves the next query. Through the Ecto
+repository the same read returned the same error, but the repository's checkout
+deadline fired at the same 200 ms and dropped the pooled connection; the section
+says so rather than asserting a kept connection there.
+
+The three-statement governed writes and the `RETURNING` scope check change no
+result a workbook asserts. The typed query dialect extension points and the
+SQL Server extraction concern adapter authors and are not taught here.
+
+The Perl workbook's `PIN` and usage-guide link are selecto-perl `dc4c97d`. Its
+setup cell now exports the parsed domain with `contract_json` and asserts that
+the export re-parses to the same bytes. It passes at that pin on in-memory
+SQLite and on PostgreSQL, with no `SELECTO_NOTEBOOK_ALLOW_LOCAL` override.
+
+The .NET, JVM, Python, Ruby and TypeScript common native API workbooks were not
+re-verified in this refresh; their recorded native revisions are unchanged.

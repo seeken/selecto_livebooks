@@ -426,6 +426,95 @@ case Selecto.execute(stats_query, format: {:stream, :maps}) do
 end
 ```
 
+## 10) Read Deadlines (`timeout:`)
+
+`Selecto.execute/2` bounds every call (30 seconds unless you pass `timeout:`).
+On PostgreSQL the adapter treats the two cases differently:
+
+- **No `timeout:`** — a generated read is sent as one statement in autocommit,
+  with no transaction, no `READ ONLY` and no server `statement_timeout`. It runs
+  under the driver's own timeout. A view or function of yours that writes is
+  therefore not refused by such a read; give the read role
+  `default_transaction_read_only = on` if you want that refusal.
+- **`timeout: milliseconds`** — the read becomes a short transaction of its own
+  (`BEGIN READ ONLY`, the deadline as a transaction-local `statement_timeout`,
+  the query, `ROLLBACK`), so the session's own `statement_timeout` is unchanged
+  afterwards.
+
+A statement carrying a host fragment, such as the custom column below, keeps its
+`READ ONLY` transaction either way. `config :selecto_db_postgresql,
+read_deadline: :always` sends a server deadline with every read, at the cost of
+that transaction on each one.
+
+The slow read below runs on a one-connection Postgrex pool so the cell can show
+that the server cancelled the statement and the same connection served the next
+query. Through an Ecto repository the caller gets the same `:timeout_error`, but
+at these revisions the repository's checkout deadline is the same number of
+milliseconds and can fire first, in which case that pooled connection is dropped
+and replaced.
+
+```elixir
+deadline_query =
+  Selecto.configure(config.product_domain, config.repo)
+  |> Selecto.select(select([id, name]))
+  |> Selecto.order_by(order_by([asc(id)]))
+  |> Selecto.limit(3)
+
+repo_statement_timeout = fn ->
+  Ecto.Adapters.SQL.query!(config.repo, "SHOW statement_timeout", []).rows
+end
+
+before_deadline = repo_statement_timeout.()
+{:ok, {deadline_rows, _columns, _aliases}} = Selecto.execute(deadline_query, timeout: 2_000)
+3 = length(deadline_rows)
+^before_deadline = repo_statement_timeout.()
+
+# A deliberately slow read: the host-authored fragment sleeps for one second.
+nap_column = %{name: "Nap", select: "pg_sleep(1)::text", type: :string}
+
+slow_domain =
+  Map.update(
+    config.product_domain,
+    :custom_columns,
+    %{"nap" => nap_column},
+    &Map.put(&1, "nap", nap_column)
+  )
+
+{:ok, deadline_conn} =
+  SelectoLivebooks.NotebookSupport.repo_config()
+  |> Keyword.put(:pool_size, 1)
+  |> Postgrex.start_link()
+
+session = fn ->
+  Postgrex.query!(
+    deadline_conn,
+    "SELECT pg_backend_pid(), current_setting('statement_timeout')",
+    []
+  ).rows
+end
+
+session_before = session.()
+
+slow_query =
+  Selecto.configure(slow_domain, deadline_conn)
+  |> Selecto.select(["id", "nap"])
+  |> Selecto.limit(1)
+
+started = System.monotonic_time(:millisecond)
+
+{:error, %Selecto.Error{type: :timeout_error, details: %{timeout: 200}} = deadline_error} =
+  Selecto.execute(slow_query, timeout: 200)
+
+elapsed_ms = System.monotonic_time(:millisecond) - started
+true = elapsed_ms < 1_000
+
+# Same backend process, same session statement_timeout: the connection stayed.
+^session_before = session.()
+GenServer.stop(deadline_conn)
+
+%{error: deadline_error.message, elapsed_ms: elapsed_ms, session: session_before}
+```
+
 ## 11) Memory Profile for Wide Result Sets
 
 Inspect a whole-VM memory delta around eager execution. This is not a peak-memory
