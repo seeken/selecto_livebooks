@@ -25,6 +25,11 @@ the document (RFC 8785 + SHA-256), not a declared label. The domain nested in
 the `notes` write relationship is a schema 2 document too: its own `tenant` is
 the child's write authority. A schema 1 domain still parses, deprecated.
 
+`contract_json` exports the parsed domain as a canonical contract with JSON
+booleans at every flag position. It carries no request scope or tenant value, so
+it is safe to hand to another library, and parsing the export and exporting
+again gives the same bytes.
+
 ```perl
 use 5.034;
 use strict;
@@ -95,6 +100,10 @@ $contract->{actions}{archive} = {
 my $domain = Selecto::Domain->parse($contract);
 check($domain->schema_version == 2 && !@{$domain->schema_diagnostics}, 'schema 2 domain, not deprecated');
 check($domain->tenant_field eq 'tenant_id', 'the top-level tenant scopes the engine');
+my $canonical = JSON::PP->new->canonical;
+my $exported = $canonical->encode($domain->contract_json);
+check($exported eq $canonical->encode(Selecto::Domain->parse($canonical->decode($exported))->contract_json),
+    'the exported contract re-parses to the same bytes');
 my $adapter = Selecto->adapter($backend => (dbh => $dbh));
 my $engine = Selecto::Engine->new(domain => $domain, adapter => $adapter)->with_tenant(8);
 record('setup', backend => $backend, domain => $contract, schema_version => $domain->schema_version,
@@ -255,7 +264,7 @@ print JSON::PP->new->canonical()->utf8()->encode({backend => $backend, observati
 These observed results do not grant execution permission. Preview and execute
 authorize independently. Compound root handles require every key field in the
 projection and each exact read-key predicate; see the native
-[usage guide](https://github.com/seeken/selecto-perl/blob/9af217eaf0fe0316cd2bcce0b5cfff9e5e35fe17/docs/fluent-writes.md).
+[usage guide](https://github.com/seeken/selecto-perl/blob/1946ab53af9c04efef822419f6e64604d033e768/docs/fluent-writes.md).
 Action-produced handles, row-bound action convenience, shared relationships,
 synchronization, compound bulk-action targets, multi-column relationship bindings,
 and editable adapters beyond PostgreSQL remain unsupported.
