@@ -265,8 +265,9 @@ SQL Server extraction concern adapter authors and are not taught here.
 
 The Perl workbook's `PIN` and usage-guide link are selecto-perl `f41bfaa`. Its
 setup cell now exports the parsed domain with `contract_json` and asserts that
-the export re-parses to the same bytes. It passes at that pin on in-memory
-SQLite and on PostgreSQL, with no `SELECTO_NOTEBOOK_ALLOW_LOCAL` override.
+the export re-parses to the same bytes. Re-run at that pin on 2026-11-21, all
+six cells pass on in-memory SQLite and on a RAM-backed PostgreSQL 18, with no
+`SELECTO_NOTEBOOK_ALLOW_LOCAL` override.
 
 The .NET, JVM, Python, Ruby and TypeScript common native API workbooks were not
 re-verified in this refresh; their recorded native revisions are unchanged.
