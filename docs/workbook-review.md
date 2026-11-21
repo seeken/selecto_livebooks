@@ -263,7 +263,7 @@ The three-statement governed writes and the `RETURNING` scope check change no
 result a workbook asserts. The typed query dialect extension points and the
 SQL Server extraction concern adapter authors and are not taught here.
 
-The Perl workbook's `PIN` and usage-guide link are selecto-perl `1946ab5`. Its
+The Perl workbook's `PIN` and usage-guide link are selecto-perl `40cf93e`. Its
 setup cell now exports the parsed domain with `contract_json` and asserts that
 the export re-parses to the same bytes. It passes at that pin on in-memory
 SQLite and on PostgreSQL, with no `SELECTO_NOTEBOOK_ALLOW_LOCAL` override.
