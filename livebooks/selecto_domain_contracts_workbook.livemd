@@ -25,7 +25,7 @@ Code.require_file(Path.expand("support/action_fixture.exs", __DIR__))
 base = SelectoLivebooks.ActionFixture.domain()
 assert {:ok, normalized, diagnostics} = Selecto.Domain.validate(base)
 assert normalized.writes.fields.state == %{updatable: true}
-assert diagnostics.unknown_sections == [:tenant_required]
+assert diagnostics.unknown_sections == []
 
 query_projection = Selecto.Domain.project(normalized, :query)
 write_projection = Selecto.Domain.project(normalized, :write)
@@ -35,12 +35,10 @@ assert write_projection.actions.approve.execution.operation == :update
 assert ui_projection.actions.approve.selection.eligibility_field == :eligible
 ```
 
-The fixture's runtime `tenant_required` flag is still classified as an unknown
-top-level schema section. Validation retains it for compatibility; an unknown
-section diagnostic does not necessarily mean runtime behavior is absent. The
-write-side tenant policy is declared separately under `writes.scope.tenant`.
-That is the schema 1 shape this fixture uses; section 6 shows schema 2, which
-declares tenancy once.
+The fixture's runtime `tenant_required` flag is recognized by the pinned
+validator, so it produces no unknown-section diagnostic. The write-side tenant
+policy is declared separately under `writes.scope.tenant`. That is the schema 1
+shape this fixture uses; section 6 shows schema 2, which declares tenancy once.
 
 ## 2) Declare consumer dependencies and application experiences
 
