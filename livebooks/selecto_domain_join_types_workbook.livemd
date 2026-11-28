@@ -15,8 +15,10 @@ SelectoLivebooksNotebookBootstrap.install!()
 This workbook explores advanced domain-level join intent markers.
 
 1. `:star_dimension` for OLAP-like aggregate semantics
-2. `:snowflake_dimension` for normalized dimension chains
-3. Hierarchical markers (`:adjacency_list`, `:materialized_path`, `:closure_table`)
+2. Snowflake dimensions: normalized tables as nested joins under a dimension
+   (`:snowflake_dimension` is native sugar for `:star_dimension`)
+3. The adjacency-list hierarchy (`:materialized_path` and `:closure_table` were
+   removed and refuse; walk other trees with a recursive query member)
 4. Metadata and SQL differences for the same logical query
 
 ```mermaid
@@ -33,7 +35,7 @@ flowchart LR
 graph TD
   fact[orders fact]
   customer[customer dimension]
-  snow[snowflake normalization]
+  snow[nested normalized joins]
   hier[hierarchical join family]
 
   fact --> customer
@@ -53,7 +55,7 @@ This cell starts the shared sample-app repo and loads the maintained order and
 employee domains for join-type variants.
 
 ```elixir
-config = SelectoLivebooks.NotebookSupport.config([:order_domain, :employee_domain])
+config = SelectoLivebooks.NotebookSupport.config([:order_domain, :employee_domain, :order_items_domain, :product_domain])
 counts = SelectoLivebooks.NotebookSupport.table_counts(["orders", "employees"])
 order_count = counts["orders"]
 employee_count = counts["employees"]
@@ -99,35 +101,71 @@ olap_query =
 JoinTypeLab.Helpers.run("Star dimension marker", olap_query)
 ```
 
-## 2) `:snowflake_dimension` Marker
+## 2) Snowflake Dimension as Nested Joins
 
-Apply the snowflake marker and normalization chain while keeping query API usage unchanged.
+A snowflake dimension normalizes into further tables. Join each one as a nested
+association under its dimension: here order lines read `category` through the
+`product` dimension. The older `normalization_joins` list on the join was
+removed and refuses.
 
 ```elixir
+order_items_domain = config.order_items_domain
+product_domain = config.product_domain
+
 snowflake_domain =
-  put_in(config.order_domain, [:joins, :customer],
-    config.order_domain.joins.customer
-    |> Map.merge(%{
+  order_items_domain
+  |> put_in([:schemas, :products, :fields], order_items_domain.schemas.products.fields ++ [:category_id])
+  |> put_in([:schemas, :products, :columns, :category_id], %{type: :integer})
+  |> put_in([:schemas, :products, :associations], %{category: product_domain.source.associations.category})
+  |> put_in([:schemas, :categories], product_domain.schemas.categories)
+  |> put_in(
+    [:joins, :product],
+    Map.merge(order_items_domain.joins.product, %{
       type: :snowflake_dimension,
       display_field: :name,
-      normalization_joins: [
-        %{table: "customers", key: "id", foreign_key: "id", alias: "customer_customers"}
-      ]
+      joins: %{
+        category: Map.merge(product_domain.joins.category, %{type: :star_dimension, display_field: :name})
+      }
     })
   )
 
 snowflake_selecto = Selecto.configure(snowflake_domain, config.repo)
-snowflake_join = Selecto.joins(snowflake_selecto)[:customer]
+snowflake_join = Selecto.joins(snowflake_selecto)[:product]
 
 snowflake_query =
   snowflake_selecto
-  |> Selecto.select(["customer.name", {:count, "*"}, {:sum, "total"}])
-  |> Selecto.group_by(["customer.name"])
-  |> Selecto.order_by({{:sum, "total"}, :desc})
+  |> Selecto.select(["category.name", {:count, "*"}, {:sum, "line_total"}])
+  |> Selecto.group_by(["category.name"])
+  |> Selecto.order_by({{:sum, "line_total"}, :desc})
   |> Selecto.limit(10)
 
+{snowflake_sql, _params} = Selecto.to_sql(snowflake_query)
+
+unless snowflake_join.join_type == :star_dimension and
+         snowflake_sql =~ "left join categories category on category.id = product.category_id",
+       do: raise("category should be joined under the product star dimension")
+
 IO.puts("Join metadata marker: #{inspect(snowflake_join.join_type)}")
-JoinTypeLab.Helpers.run("Snowflake dimension marker", snowflake_query)
+JoinTypeLab.Helpers.run("Snowflake dimension (category under product)", snowflake_query)
+
+removed_form =
+  put_in(config.order_domain, [:joins, :customer],
+    Map.merge(config.order_domain.joins.customer, %{
+      type: :snowflake_dimension,
+      display_field: :name,
+      normalization_joins: [%{table: "customers", key: "id", foreign_key: "id", alias: "customer_customers"}]
+    })
+  )
+
+removed_refusal =
+  try do
+    Selecto.configure(removed_form, config.repo)
+    raise "normalization_joins should be refused"
+  rescue
+    error in Selecto.DomainValidator.ValidationError -> Exception.message(error)
+  end
+
+IO.puts("normalization_joins refused as expected: #{removed_refusal}")
 ```
 
 ## 3) Side-by-Side Marker Comparison (`:left`, `:star_dimension`, `:snowflake_dimension`)
@@ -152,13 +190,7 @@ star_domain =
 snowflake_domain_compare =
   put_in(config.order_domain, [:joins, :customer],
     base_customer_join
-    |> Map.merge(%{
-      type: :snowflake_dimension,
-      display_field: :name,
-      normalization_joins: [
-        %{table: "customers", key: "id", foreign_key: "id", alias: "customer_customers"}
-      ]
-    })
+    |> Map.merge(%{type: :snowflake_dimension, display_field: :name})
   )
 
 build_query = fn selecto ->
@@ -168,27 +200,38 @@ build_query = fn selecto ->
   |> Selecto.limit(5)
 end
 
-Enum.each(
-  [
-    {"Regular (:left)", regular_domain},
-    {"Star (:star_dimension)", star_domain},
-    {"Snowflake (:snowflake_dimension)", snowflake_domain_compare}
-  ],
-  fn {label, domain} ->
-    selecto = Selecto.configure(domain, config.repo)
-    query = build_query.(selecto)
-    {_sql, _params} = JoinTypeLab.Helpers.explain(label, query)
-    join_meta = Selecto.joins(selecto)[:customer]
-    IO.puts("join_type metadata: #{inspect(Map.get(join_meta, :join_type, :basic))}")
-  end
-)
+compared =
+  Enum.map(
+    [
+      {"Regular (:left)", regular_domain},
+      {"Star (:star_dimension)", star_domain},
+      {"Snowflake (:snowflake_dimension)", snowflake_domain_compare}
+    ],
+    fn {label, domain} ->
+      selecto = Selecto.configure(domain, config.repo)
+      query = build_query.(selecto)
+      {sql, params} = JoinTypeLab.Helpers.explain(label, query)
+      join_meta = Selecto.joins(selecto)[:customer]
+      join_type = Map.get(join_meta, :join_type, :basic)
+      IO.puts("join_type metadata: #{inspect(join_type)}")
+      {label, {sql, params, join_type}}
+    end
+  )
+  |> Map.new()
+
+# Without nested joins, the snowflake sugar plans exactly like a star dimension.
+if compared["Star (:star_dimension)"] != compared["Snowflake (:snowflake_dimension)"],
+  do: raise("snowflake_dimension sugar should plan exactly like star_dimension")
 
 :ok
 ```
 
 ## 4) Hierarchical Marker Metadata Preview
 
-Preview metadata and generated field surfaces for three hierarchy styles without requiring all physical schema artifacts.
+Preview the adjacency-list join's metadata and generated fields. The
+`:materialized_path` and `:closure_table` hierarchy types were removed: each
+refuses at configuration time and names the replacement, a recursive query
+member (`query_members.ctes` with `kind: :recursive`).
 
 ```elixir
 hierarchy_base =
@@ -242,29 +285,38 @@ hierarchy_variants = [
 
 Enum.each(hierarchy_variants, fn {label, join_config} ->
   domain = put_in(hierarchy_base, [:joins, :manager_tree], join_config)
+  IO.puts("\n=== #{label} ===")
 
-  try do
-    selecto = Selecto.configure(domain, config.repo)
-    join_meta = Selecto.joins(selecto)[:manager_tree]
+  case label do
+    :adjacency_list ->
+      selecto = Selecto.configure(domain, config.repo)
+      join_meta = Selecto.joins(selecto)[:manager_tree]
 
-    hierarchy_fields =
-      selecto
-      |> Selecto.columns()
-      |> Map.keys()
-      |> Enum.filter(&String.contains?(&1, "manager_tree"))
-      |> Enum.sort()
-      |> Enum.take(12)
+      hierarchy_fields =
+        selecto
+        |> Selecto.columns()
+        |> Map.keys()
+        |> Enum.filter(&String.contains?(&1, "manager_tree"))
+        |> Enum.sort()
+        |> Enum.take(14)
 
-    IO.puts("\n=== #{label} ===")
-    IO.puts("join_type: #{inspect(join_meta.join_type)}")
-    IO.puts("hierarchy_depth: #{inspect(Map.get(join_meta, :hierarchy_depth))}")
-    IO.puts("path_field: #{inspect(Map.get(join_meta, :path_field))}")
-    IO.puts("closure_table: #{inspect(Map.get(join_meta, :closure_table))}")
-    IO.puts("field preview: #{inspect(hierarchy_fields)}")
-  rescue
-    e ->
-      IO.puts("\n=== #{label} ===")
-      IO.puts("Hierarchy preview failed: #{Exception.message(e)}")
+      IO.puts("join_type: #{inspect(join_meta.join_type)}")
+      IO.puts("hierarchy_depth: #{inspect(Map.get(join_meta, :hierarchy_depth))}")
+      IO.puts("field preview: #{inspect(hierarchy_fields)}")
+
+      unless join_meta.join_type == :hierarchical_adjacency and "manager_tree_level" in hierarchy_fields,
+        do: raise("adjacency list should expose its level helper field")
+
+    removed ->
+      message =
+        try do
+          Selecto.configure(domain, config.repo)
+          raise "#{removed} should be refused"
+        rescue
+          error in Selecto.DomainValidator.ValidationError -> Exception.message(error)
+        end
+
+      IO.puts("refused as expected: #{message}")
   end
 end)
 
@@ -304,13 +356,14 @@ adjacency_query =
 JoinTypeLab.Helpers.run("Adjacency hierarchy runtime", adjacency_query)
 ```
 
-## 7) Snowflake Normalization Chains
+## 7) Customer Geography Through the Customer Join
 
-Build a reporting query that walks from orders through customer and geography
-style dimensions without flattening the domain definition into one table.
+Report on customer attributes that live on the customer table itself. This is
+one ordinary join; Section 2 shows a true snowflake, where a normalized table
+is joined under its dimension.
 
 ```elixir
-snowflake_chain_query =
+customer_geography_query =
   Selecto.configure(config.order_domain, config.repo)
   |> Selecto.select(select([
     order_number,
@@ -324,7 +377,7 @@ snowflake_chain_query =
   |> Selecto.order_by(order_by([asc(customer.country), desc(total)]))
   |> Selecto.limit(20)
 
-JoinTypeLab.Helpers.run("Snowflake-style customer geography chain", snowflake_chain_query)
+JoinTypeLab.Helpers.run("Customer geography through one join", customer_geography_query)
 ```
 
 ## 8) Compare SQL Plans Between Join Markers
@@ -335,7 +388,7 @@ plan text.
 ```elixir
 plan_rows =
   [
-    {"snowflake", snowflake_chain_query},
+    {"customer join", customer_geography_query},
     {"adjacency", adjacency_query}
   ]
   |> Enum.map(fn {label, query} ->
@@ -379,7 +432,7 @@ snowflake chains, and adjacency hierarchies.
 join_marker_matrix =
   [
     %{marker: "ordinary", source: "customers", relationship: "orders.customer_id -> customers.id", generated_fields: "joined table fields"},
-    %{marker: "snowflake", source: "manager chain", relationship: "employee.manager_id -> manager.id", generated_fields: "each configured hop"},
+    %{marker: "snowflake", source: "products, categories", relationship: "order_items.product_id -> products.id; products.category_id -> categories.id (nested join)", generated_fields: "each nested join's fields, plus <id>_display"},
     %{marker: "adjacency", source: "employees", relationship: "id -> manager_id recursively", generated_fields: "level, path, root"}
   ]
 
