@@ -7,7 +7,7 @@ tenant. Reads, fluent writes, actions and callback engines inherit the binding.
 This notebook inspects and executes the complete native program on in-memory
 SQLite. Install the native repository's pinned development environment first.
 Set `SELECTO_TYPESCRIPT_PATH` if the checkout is not a sibling of
-`selecto_livebooks`. Verified native source: `9abcb110053cffe3184e2b6495323df52deac09c`.
+`selecto_livebooks`. Verified native source: `98a79ec4741a2b63b6df58a79d347881d8cdd136`.
 
 ## Inspect The Native Program
 
@@ -20,7 +20,7 @@ The sample declares a native domain structure, previews actual SQL and separate
 parameters, inserts without `org_id`, then invokes the archive action inside an
 inherited transaction. A second callback inserts another row and attempts a
 refused foreign-tenant delete. That callback rolls back its preceding insert.
-Final scoped rows are `[[2, 8, "Test", "archived"]]`.
+Final scoped rows are `[[2n, 8n, "Test", "archived"]]`: integer columns read back as exact `bigint` values.
 
 ## Execute And Verify
 
