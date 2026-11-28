@@ -271,3 +271,34 @@ six cells pass on in-memory SQLite and on a RAM-backed PostgreSQL 18, with no
 
 The .NET, JVM, Python, Ruby and TypeScript common native API workbooks were not
 re-verified in this refresh; their recorded native revisions are unchanged.
+
+## November 27, 2026 refresh
+
+The Elixir pins stay at `selecto` ba6d682, `selecto_db_postgresql` 368c81a
+and `selecto_components` 4a00734. The seeded reference gate failed at those
+pins: `selecto` b38a07f (2026-11-21) removed the snowflake
+`normalization_joins` list, the `materialized_path` and `closure_table`
+hierarchy types, `cross_join`, and the raw-SQL `lateral_join` and
+`conditional_join` join types, and the guide examples and domain join types
+workbooks still configured the first three. Both now build a real snowflake:
+order lines read `category` through the `product` dimension, with the
+category table joined as a nested join under it. They assert that
+`:snowflake_dimension` is native sugar for `:star_dimension` (identical SQL
+and metadata), that a `normalization_joins` list and the two removed
+hierarchy types refuse at configuration time, and that the adjacency-list
+hierarchy still exposes its level and path fields. The domain join types
+workbook's "snowflake chains" section was one ordinary customer join and is
+renamed for what it is. The query-level `Selecto.lateral_join/5` used by the
+arrays workbook is unaffected. All three gates pass with sibling checkouts at
+the pins against a RAM-backed PostgreSQL 18.
+
+The five native common API workbooks were re-executed in containers against
+each runtime's current `main` (selecto-dotnet e7e5da3, selecto-jvm 6a8925d,
+selecto-python ec5584d, selecto-rails f7553e5, selecto-typescript 7ea62cd)
+and record those revisions. Their samples are unchanged since the previous
+recorded revisions, and the printed SQL and parameters match the prose.
+
+The Perl workbook's `PIN` and usage-guide link are selecto-perl `f93c9b7`.
+All six cells pass on in-memory SQLite and on PostgreSQL temporary tables,
+with no `SELECTO_NOTEBOOK_ALLOW_LOCAL` override, and the observations are
+identical to a run at the previous pin `eded9da`.
